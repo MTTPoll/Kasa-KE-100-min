@@ -15,7 +15,6 @@ async def async_setup_entry(hass, entry, async_add_entities):
 class T110BinarySensor(CoordinatorEntity[KasaCoordinator], BinarySensorEntity):
     _attr_device_class = BinarySensorDeviceClass.DOOR
     _attr_has_entity_name = True
-    _attr_icon = "mdi:window-closed-variant"
 
     def __init__(self, coordinator: KasaCoordinator, device_id: str) -> None:
         super().__init__(coordinator)

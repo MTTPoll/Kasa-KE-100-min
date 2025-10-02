@@ -29,7 +29,6 @@ class KE100Climate(CoordinatorEntity[KasaCoordinator], ClimateEntity):
     _attr_target_temperature_step = STEP_C
     _attr_min_temp = MIN_C
     _attr_max_temp = MAX_C
-    _attr_icon = "mdi:thermostat"
 
     def __init__(self, coordinator: KasaCoordinator, device_id: str) -> None:
         super().__init__(coordinator)
@@ -55,6 +54,7 @@ class KE100Climate(CoordinatorEntity[KasaCoordinator], ClimateEntity):
 
     @property
     def hvac_action(self) -> HVACAction | None:
+        # OFF has priority
         if getattr(self, "_attr_hvac_mode", None) == HVACMode.OFF:
             return HVACAction.OFF
         trv = self.coordinator.data["trvs"].get(self._id)

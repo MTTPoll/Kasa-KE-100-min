@@ -86,6 +86,7 @@ class KH100Client:
                 thermo = None
 
             if thermo is not None:
+                # Ist-Temperatur robust auslesen
                 cur = _to_float(getattr(thermo, "current_temperature", None))
                 if cur is None:
                     cur = _to_float(getattr(thermo, "temperature", None))
@@ -98,6 +99,7 @@ class KH100Client:
                             if cur is not None:
                                 break
 
+                # Soll-Temperatur robust auslesen
                 tgt = _to_float(getattr(thermo, "target_temperature", None))
                 if tgt is None:
                     tgt = _to_float(getattr(thermo, "setpoint", None))
@@ -155,6 +157,7 @@ class KH100Client:
             return
         t_int = int(round(float(temperature)))
 
+        # Child suchen
         target_child = None
         try:
             for child in (self._hub.children or []):
