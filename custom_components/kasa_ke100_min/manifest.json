@@ -1,13 +1,14 @@
 {
   "domain": "kasa_ke100_min",
-  "name": "Kasa KE100 (minimal)",
+  "name": "KASA KE100 Thermostat – HA Integration",
   "version": "0.2.3",
-  "iot_class": "local_polling",
-  "integration_type": "hub",
-  "requirements": [
-    "python-kasa>=0.7.0"
-  ],
   "config_flow": true,
-  "documentation": "https://github.com/<your-account>/homeassistant-kasa-ke100-min",
-  "issue_tracker": "https://github.com/<your-account>/homeassistant-kasa-ke100-min/issues"
+  "documentation": "https://github.com/MTTPoll/Kasa-KE-100-min",
+  "issue_tracker": "https://github.com/MTTPoll/Kasa-KE-100-min/issues",
+  "iot_class": "local_push",
+  "integration_type": "hub",
+  "after_dependencies": ["logger"],
+  "requirements": [],
+  "codeowners": ["@MTTPoll"],
+  "loggers": ["custom_components.kasa_ke100_min"]
 }

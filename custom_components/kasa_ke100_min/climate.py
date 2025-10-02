@@ -1,92 +1,95 @@
 from __future__ import annotations
 from typing import Any
-from homeassistant.components.climate import ClimateEntity, HVACMode, ClimateEntityFeature, HVACAction
-from homeassistant.const import UnitOfTemperature, ATTR_TEMPERATURE
+import logging
+
+from homeassistant.components.climate import ClimateEntity
+from homeassistant.components.climate.const import HVACMode, ClimateEntityFeature
+from homeassistant.const import TEMP_CELSIUS, ATTR_TEMPERATURE
+from homeassistant.core import callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.helpers.entity import DeviceInfo
 
 from .const import DOMAIN, MANUFACTURER, MODEL_KE100
-from .coordinator import KasaCoordinator
 
-PARALLEL_UPDATES = 0
+_LOGGER = logging.getLogger(__name__)
 
-MIN_C = 5.0
-MAX_C = 30.0
-STEP_C = 1.0
+HVAC_MODES = [HVACMode.HEAT, HVACMode.OFF]
 
 async def async_setup_entry(hass, entry, async_add_entities):
     data = hass.data[DOMAIN][entry.entry_id]
-    coordinator: KasaCoordinator = data["coordinator"]
-    entities: list[ClimateEntity] = [KE100Climate(coordinator, dev_id) for dev_id in coordinator.data["trvs"]]
+    hub = data["hub"]
+    coordinator = data["coordinator"]
+
+    devices = await hub.async_refresh()
+    entities = []
+    for dev_id, dev in devices.items():
+        if dev.get("type") == "climate":
+            entities.append(Ke100Climate(coordinator, hub, dev_id))
     async_add_entities(entities)
 
-class KE100Climate(CoordinatorEntity[KasaCoordinator], ClimateEntity):
-    _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
-    _attr_temperature_unit = UnitOfTemperature.CELSIUS
-    _attr_hvac_modes = [HVACMode.HEAT]
-    _attr_hvac_mode = HVACMode.HEAT
+class Ke100Climate(CoordinatorEntity, ClimateEntity):
     _attr_has_entity_name = True
-    _attr_target_temperature_step = STEP_C
-    _attr_min_temp = MIN_C
-    _attr_max_temp = MAX_C
+    _attr_temperature_unit = TEMP_CELSIUS
+    _attr_hvac_modes = HVAC_MODES
+    _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
+    _attr_min_temp = 5
+    _attr_max_temp = 30
+    _attr_target_temperature_step = 1.0
 
-    def __init__(self, coordinator: KasaCoordinator, device_id: str) -> None:
+    def __init__(self, coordinator, hub, device_id: str) -> None:
         super().__init__(coordinator)
+        self._hub = hub
         self._id = device_id
-        self._attr_unique_id = device_id
+        dev = coordinator.data.get(device_id, {})
+        self._attr_name = dev.get("name", "KE100")
+        self._unique = dev.get("unique", device_id)
+        self._sw = dev.get("sw")
 
     @property
-    def name(self) -> str | None:
-        trv = self.coordinator.data["trvs"].get(self._id)
-        return trv.name if trv else None
+    def unique_id(self) -> str:
+        return f"{self._unique}-climate"
 
     @property
-    def device_info(self) -> DeviceInfo:
-        return DeviceInfo(identifiers={(DOMAIN, self._id)}, manufacturer=MANUFACTURER, model=MODEL_KE100, name=self.name)
+    def device_info(self) -> dict[str, Any]:
+        return {
+            "identifiers": {(DOMAIN, self._unique)},
+            "manufacturer": MANUFACTURER,
+            "model": MODEL_KE100,
+            "name": self.name,
+            "sw_version": self._sw,
+        }
+
+    @property
+    def available(self) -> bool:
+        return True
 
     @property
     def current_temperature(self) -> float | None:
-        return self.coordinator.data["trvs"][self._id].current_temperature
+        return self.coordinator.data[self._id].get("current_temp")
 
     @property
     def target_temperature(self) -> float | None:
-        return self.coordinator.data["trvs"][self._id].target_temperature
+        return self.coordinator.data[self._id].get("target_temp")
 
     @property
-    def hvac_action(self) -> HVACAction | None:
-        # OFF has priority
-        if getattr(self, "_attr_hvac_mode", None) == HVACMode.OFF:
-            return HVACAction.OFF
-        trv = self.coordinator.data["trvs"].get(self._id)
-        if not trv:
-            return None
-        cur = trv.current_temperature
-        tgt = trv.target_temperature
-        if cur is None or tgt is None:
-            return None
-        if (tgt - cur) > 0.2:
-            return HVACAction.HEATING
-        return HVACAction.IDLE
+    def hvac_mode(self) -> HVACMode:
+        action = self.coordinator.data[self._id].get("hvac_action")
+        return HVACMode.OFF if action == "off" else HVACMode.HEAT
 
-    async def async_set_temperature(self, **kwargs: Any) -> None:
-        temp_any = kwargs.get(ATTR_TEMPERATURE)
-        if temp_any is None:
+    @property
+    def hvac_action(self):
+        return self.coordinator.data[self._id].get("hvac_action")
+
+    async def async_set_temperature(self, **kwargs):
+        if (temp := kwargs.get(ATTR_TEMPERATURE)) is None:
             return
-        temp = round(float(temp_any))
-        if temp < MIN_C:
-            temp = int(MIN_C)
-        if temp > MAX_C:
-            temp = int(MAX_C)
-        await self.coordinator.client.async_set_target_temperature(self._id, float(temp))
+        temp = round(float(temp))
+        await self._hub.async_set_target_temperature(self._id, temp)
         await self.coordinator.async_request_refresh()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
-        if hvac_mode == HVACMode.OFF:
-            if HVACMode.OFF not in self._attr_hvac_modes:
-                self._attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
-            self._attr_hvac_mode = HVACMode.OFF
-        else:
-            if HVACMode.OFF in self._attr_hvac_modes:
-                self._attr_hvac_modes = [HVACMode.HEAT]
-            self._attr_hvac_mode = HVACMode.HEAT
+        await self._hub.async_set_hvac_mode(self._id, hvac_mode)
         await self.coordinator.async_request_refresh()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self.async_write_ha_state()

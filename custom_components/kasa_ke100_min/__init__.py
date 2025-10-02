@@ -1,32 +1,44 @@
 from __future__ import annotations
+from datetime import timedelta
+import logging
+
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.exceptions import ConfigEntryNotReady
-from .const import DOMAIN, PLATFORMS, CONF_HOST
-from .api import KH100Client
-from .coordinator import KasaCoordinator
 
-CONF_USERNAME = "username"
-CONF_PASSWORD = "password"
+from .const import DOMAIN, DEFAULT_POLL_INTERVAL, PLATFORMS
+from .helpers.hub import KasaMatterProxyHub
 
-async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    return True
+_LOGGER = logging.getLogger(__name__)
+
+def _poll_delta(entry: ConfigEntry) -> timedelta:
+    seconds = entry.options.get("poll_interval", DEFAULT_POLL_INTERVAL)
+    return timedelta(seconds=seconds)
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    host = entry.data[CONF_HOST]
-    username = entry.data.get(CONF_USERNAME)
-    password = entry.data.get(CONF_PASSWORD)
+    # Matter-Proxy: Wir docken an bestehende Matter-Entities in HA an
+    hub = KasaMatterProxyHub(hass, entry, DOMAIN)
 
-    client = KH100Client(host, username=username, password=password)
-    await client.async_connect()
-    if not client.connected:
-        raise ConfigEntryNotReady("Cannot connect to KH100")
-
-    coordinator = KasaCoordinator(hass, client)
+    await hub.async_connect()
+    coordinator = DataUpdateCoordinator(
+        hass,
+        _LOGGER,
+        name=f"{DOMAIN}_coordinator",
+        update_method=hub.async_refresh,
+        update_interval=_poll_delta(entry),
+    )
     await coordinator.async_config_entry_first_refresh()
 
+    @callback
+    def _on_hub_event(updated_devices: dict):
+        coordinator.async_set_updated_data(updated_devices)
+
+    hub.add_listener(_on_hub_event)
+    await hub.async_start_event_listener()
+
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
-        "client": client,
+        "hub": hub,
         "coordinator": coordinator,
     }
 
@@ -34,7 +46,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    data = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+    if data:
+        await data["hub"].async_stop_event_listener()
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    data = hass.data[DOMAIN].pop(entry.entry_id)
-    await data["client"].async_close()
+    if data:
+        await data["hub"].async_disconnect()
     return unload_ok

@@ -1,0 +1,18 @@
+{
+  "title": "KASA KE100 (Matter Proxy)",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Matter-Entities zuordnen",
+        "description": "Gib die Entity-ID des Matter-Climate-Geräts (KH100/KE100) und optional CSV der Contact-Sensoren an.",
+        "data": {
+          "matter_climate_entity_id": "Climate-Entity-ID (z.B. climate.kh100_radiator)",
+          "matter_contact_entity_ids": "Contact-Sensoren (CSV, optional)"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Bereits konfiguriert."
+    }
+  }
+}
