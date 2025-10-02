@@ -1,15 +1,8 @@
-# Kasa KE100 Minimal
+# Kasa KE100 (minimal)
 
-⚡ Eine schlanke Home Assistant Integration für **Kasa KE100 Thermostate** und **T110 Fenstersensoren**.  
-- Auslesen der Ist-Temperatur  
-- Setzen der Soll-Temperatur (nur ganze Grad Celsius)  
-- Fensterstatus via T110  
+Minimal Home Assistant integration for **TP-Link KH100 Hub + KE100 TRVs** and **Tapo T110** contacts.
 
-## Installation über HACS
-1. HACS → Benutzerdefiniertes Repository hinzufügen  
-   URL: `https://github.com/MTTPoll/Kasa-KE-100-min`  
-   Kategorie: **Integration**  
-2. Danach Integration installieren und in Home Assistant einrichten.
+- KE100 as `climate` (current + target temp, whole °C, 5–30 °C)
+- T110 as `binary_sensor` (door)
+- Shows **hvac_action**: `heating` / `idle` / `off`
 
----
-Version: **0.2.3**

@@ -1,8 +1,7 @@
 {
-  "name": "Kasa KE100 minimal",
-  "content_in_root": false,
-  "domains": ["kasa_ke100_min"],
+  "name": "Kasa KE100 (minimal)",
+  "domain": "kasa_ke100_min",
+  "homeassistant": "2023.9.0",
   "render_readme": true,
-  "zip_release": false,
-  "icon": "https://raw.githubusercontent.com/MTTPoll/Kasa-KE-100-min/main/custom_components/kasa_ke100_min/logoK.png"
+  "iot_class": "local_polling"
 }
