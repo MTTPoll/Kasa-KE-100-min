@@ -1,7 +1,7 @@
 {
   "domain": "kasa_ke100_min",
   "name": "KASA KE100 Thermostat – HA Integration (Entity-Polling + Auth)",
-  "version": '0.2.5-entity-poll-auth',
+  "version": "0.2.5-entity-poll-auth",
   "config_flow": true,
   "documentation": "https://github.com/MTTPoll/Kasa-KE-100-min",
   "issue_tracker": "https://github.com/MTTPoll/Kasa-KE-100-min/issues",
