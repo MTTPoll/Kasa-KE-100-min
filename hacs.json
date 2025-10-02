@@ -7,6 +7,6 @@
   "country": "any",
   "render_readme": true,
   "zip_release": true,
-  "filename": "homeassistant-kasa-ke100-min-0.2.5.zip",
+  "filename": "homeassistant-kasa-ke100-min-0.2.6.zip",
   "icon": "https://raw.githubusercontent.com/MTTPoll/Kasa-KE-100-min/main/custom_components/kasa_ke100_min/logo.png"
 }
