@@ -28,7 +28,6 @@ class KH100Client:
         self._contacts: Dict[str, Contact] = {}
 
     async def async_connect(self) -> None:
-        # Connect to the hub; credentials may be required for newer firmwares
         self._hub = await Discover.discover_single(
             self._host,
             username=self._username,
@@ -50,13 +49,10 @@ class KH100Client:
         return self._connected
 
     async def _refresh_children(self) -> None:
-        """Read child devices and map KE100 TRVs and T110 contacts."""
         self._trvs.clear()
         self._contacts.clear()
-
         if self._hub is None:
             return
-
         children = []
         try:
             if getattr(self._hub, "children", None):
@@ -64,18 +60,14 @@ class KH100Client:
         except Exception:
             children = []
 
-        # Iterate children and classify by modules/features
         for child in children or []:
             try:
                 await child.update()
             except Exception:
-                # Skip problematic child to avoid breaking the whole refresh
                 continue
-
             devid = getattr(child, "device_id", getattr(child, "mac", getattr(child, "alias", "unknown")))
             name = getattr(child, "alias", devid)
 
-            # Thermostat module (KE100)
             thermo = None
             try:
                 thermo = child.modules.get(Module.Thermostat) if getattr(child, "modules", None) else None
@@ -88,19 +80,17 @@ class KH100Client:
                 self._trvs[devid] = TRV(devid, name, cur, tgt)
                 continue
 
-            # Contact sensor module (T110), if exposed
             contact_mod = None
             try:
                 contact_mod = child.modules.get(getattr(Module, "ContactSensor", None)) if getattr(child, "modules", None) else None
             except Exception:
                 contact_mod = None
-
             if contact_mod is not None:
                 is_open = bool(getattr(contact_mod, "is_open", False))
                 self._contacts[devid] = Contact(devid, name, is_open)
                 continue
 
-            # Fallback via features (look for contact-like features)
+            # Fallback features
             is_open_val: Optional[bool] = None
             try:
                 for feat in (child.features or {}).values():
@@ -117,7 +107,6 @@ class KH100Client:
             if is_open_val is not None:
                 self._contacts[devid] = Contact(devid, name, is_open_val)
 
-    # ---- TRVs ----
     async def async_list_trvs(self) -> List[TRV]:
         await self._refresh_children()
         return list(self._trvs.values())
@@ -130,8 +119,6 @@ class KH100Client:
         if self._hub is None:
             return
         t_int = int(round(float(temperature)))
-
-        # Find matching child
         target_child = None
         try:
             for child in (self._hub.children or []):
@@ -161,26 +148,20 @@ class KH100Client:
             thermo = target_child.modules.get(Module.Thermostat) if getattr(target_child, "modules", None) else None
         except Exception:
             thermo = None
-
         if thermo is None:
             return
 
-        # Set target temperature (method names differ across versions)
         if hasattr(thermo, "set_target_temperature"):
             await thermo.set_target_temperature(t_int)
         elif hasattr(thermo, "set_temperature"):
             await thermo.set_temperature(t_int)
-        else:
-            return
 
         try:
             await target_child.update()
         except Exception:
             pass
-
         await self._refresh_children()
 
-    # ---- Contacts (T110) ----
     async def async_list_contacts(self) -> List[Contact]:
         await self._refresh_children()
         return list(self._contacts.values())

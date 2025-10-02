@@ -32,9 +32,4 @@ class T110BinarySensor(CoordinatorEntity[KasaCoordinator], BinarySensorEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        return DeviceInfo(
-            identifiers={(DOMAIN, self._id)},
-            manufacturer=MANUFACTURER,
-            model=MODEL_T110,
-            name=self.name,
-        )
+        return DeviceInfo(identifiers={(DOMAIN, self._id)}, manufacturer=MANUFACTURER, model=MODEL_T110, name=self.name)

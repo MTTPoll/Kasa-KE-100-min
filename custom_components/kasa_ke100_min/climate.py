@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Any
-from homeassistant.components.climate import ClimateEntity, HVACMode, ClimateEntityFeature
+from homeassistant.components.climate import ClimateEntity, HVACMode, ClimateEntityFeature, HVACAction
 from homeassistant.const import UnitOfTemperature, ATTR_TEMPERATURE
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.entity import DeviceInfo
@@ -23,8 +23,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
 class KE100Climate(CoordinatorEntity[KasaCoordinator], ClimateEntity):
     _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
-    _attr_hvac_modes = [HVACMode.HEAT]  # supported modes
-    _attr_hvac_mode = HVACMode.HEAT     # current mode (required by new HA)
+    _attr_hvac_modes = [HVACMode.HEAT]
+    _attr_hvac_mode = HVACMode.HEAT
     _attr_has_entity_name = True
     _attr_target_temperature_step = STEP_C
     _attr_min_temp = MIN_C
@@ -52,6 +52,22 @@ class KE100Climate(CoordinatorEntity[KasaCoordinator], ClimateEntity):
     def target_temperature(self) -> float | None:
         return self.coordinator.data["trvs"][self._id].target_temperature
 
+    @property
+    def hvac_action(self) -> HVACAction | None:
+        # OFF has priority
+        if getattr(self, "_attr_hvac_mode", None) == HVACMode.OFF:
+            return HVACAction.OFF
+        trv = self.coordinator.data["trvs"].get(self._id)
+        if not trv:
+            return None
+        cur = trv.current_temperature
+        tgt = trv.target_temperature
+        if cur is None or tgt is None:
+            return None
+        if (tgt - cur) > 0.2:
+            return HVACAction.HEATING
+        return HVACAction.IDLE
+
     async def async_set_temperature(self, **kwargs: Any) -> None:
         temp_any = kwargs.get(ATTR_TEMPERATURE)
         if temp_any is None:
@@ -65,13 +81,10 @@ class KE100Climate(CoordinatorEntity[KasaCoordinator], ClimateEntity):
         await self.coordinator.async_request_refresh()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
-        # We only emulate HEAT and (optionally) OFF by setting a low temperature
         if hvac_mode == HVACMode.OFF:
-            # expose OFF as an allowed mode dynamically
             if HVACMode.OFF not in self._attr_hvac_modes:
                 self._attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
             self._attr_hvac_mode = HVACMode.OFF
-            await self.coordinator.client.async_set_target_temperature(self._id, MIN_C)
         else:
             if HVACMode.OFF in self._attr_hvac_modes:
                 self._attr_hvac_modes = [HVACMode.HEAT]
