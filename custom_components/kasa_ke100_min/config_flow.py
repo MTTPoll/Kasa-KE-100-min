@@ -3,8 +3,10 @@ from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
-from .const import DOMAIN, CONF_HOST
 
+# Use literals here to avoid import issues causing 'Invalid handler specified'
+DOMAIN = "kasa_ke100_min"
+CONF_HOST = "host"
 CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
 
@@ -13,9 +15,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         if user_input is not None:
-            host = user_input[CONF_HOST]
-            username = user_input.get(CONF_USERNAME) or None
-            password = user_input.get(CONF_PASSWORD) or None
+            host = user_input[CONF_HOST].strip()
+            username = (user_input.get(CONF_USERNAME) or "").strip() or None
+            password = (user_input.get(CONF_PASSWORD) or "").strip() or None
             return self.async_create_entry(
                 title=f"KH100 ({host})",
                 data={CONF_HOST: host, CONF_USERNAME: username, CONF_PASSWORD: password},
