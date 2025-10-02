@@ -1,10 +1,13 @@
 from __future__ import annotations
+import logging
 from datetime import timedelta
 from typing import Dict, TypedDict
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .api import KH100Client, TRV, Contact
 from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
 
 class HubData(TypedDict):
     trvs: Dict[str, TRV]
@@ -14,7 +17,7 @@ class KasaCoordinator(DataUpdateCoordinator[HubData]):
     def __init__(self, hass: HomeAssistant, client: KH100Client) -> None:
         super().__init__(
             hass,
-            logger=hass.helpers.logging.logger.getChild(DOMAIN),
+            logger=_LOGGER,
             name=f"{DOMAIN}_coordinator",
             update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
         )
