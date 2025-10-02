@@ -6,7 +6,7 @@
   ],
   "country": "any",
   "render_readme": true,
-  "zip_release": true,
+  "zip_release": false,
   "filename": "homeassistant-kasa-ke100-min.zip",
   "icon": "https://github.com/MTTPoll/Kasa-KE-100-min/blob/main/assets/logo.png"
 }
