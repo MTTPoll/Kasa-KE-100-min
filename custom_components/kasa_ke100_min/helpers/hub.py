@@ -3,22 +3,28 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Any
+from homeassistant.exceptions import ConfigEntryAuthFailed
 
 _LOGGER = logging.getLogger(__name__)
 
 class KasaHubClient:
-    """Minimaler Hub-Client mit Dedupe/Throttle, geeignet für Entity-basiertes Polling."""
+    """Hub-Client mit Dedupe/Throttle, geeignet für Entity-basiertes Polling und Auth."""
 
-    def __init__(self, host: str):
+    def __init__(self, host: str, username: str, password: str):
         self._host = host
+        self._username = username
+        self._password = password
         self._devices: dict[str, Any] = {}
         self._lock = asyncio.Lock()
         self._last_fetch: datetime | None = None
         self._min_interval = timedelta(seconds=1)  # innerhalb 1 s keine zweite Hub-Abfrage
 
     async def async_connect(self) -> None:
-        # TODO: echte Verbindung herstellen
+        # TODO: echte Verbindung/Login herstellen
         await asyncio.sleep(0)
+        if not self._username or not self._password:
+            raise ConfigEntryAuthFailed("Username/Password missing or invalid")
+
         # Demo-Geräte (Beispiel)
         self._devices = {
             "ke100_1": {

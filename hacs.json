@@ -1,4 +1,4 @@
 {
-  "name": "KASA KE100 Thermostat – HA Integration (Entity-Polling)",
+  "name": "KASA KE100 Thermostat – HA Integration (Entity-Polling + Auth)",
   "render_readme": true
 }
