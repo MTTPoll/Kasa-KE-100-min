@@ -1,18 +1,14 @@
 {
   "domain": "kasa_ke100_min",
   "name": "Kasa KE100 (minimal)",
-  "version": "0.2.6",
+  "version": "0.2.7",
+  "config_flow": true,
   "iot_class": "local_polling",
   "integration_type": "hub",
-  "requirements": [
-    "python-kasa>=0.7.0"
-  ],
-  "config_flow": true,
+  "requirements": ["python-kasa>=0.7.0"],
+  "codeowners": ["@MTTPoll"],
   "documentation": "https://github.com/MTTPoll/Kasa-KE-100-min",
   "issue_tracker": "https://github.com/MTTPoll/Kasa-KE-100-min/issues",
   "logo": "logo.png",
-  "icon": "icon.png",
-  "codeowners": [
-    "@MTTPoll"
-  ]
+  "icon": "icon.png"
 }
