@@ -23,7 +23,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
 class KE100Climate(CoordinatorEntity[KasaCoordinator], ClimateEntity):
     _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
-    _attr_hvac_modes = [HVACMode.HEAT]
+    _attr_hvac_modes = [HVACMode.HEAT]  # supported modes
+    _attr_hvac_mode = HVACMode.HEAT     # current mode (required by new HA)
     _attr_has_entity_name = True
     _attr_target_temperature_step = STEP_C
     _attr_min_temp = MIN_C
@@ -64,9 +65,15 @@ class KE100Climate(CoordinatorEntity[KasaCoordinator], ClimateEntity):
         await self.coordinator.async_request_refresh()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
+        # We only emulate HEAT and (optionally) OFF by setting a low temperature
         if hvac_mode == HVACMode.OFF:
-            self._attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
+            # expose OFF as an allowed mode dynamically
+            if HVACMode.OFF not in self._attr_hvac_modes:
+                self._attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
+            self._attr_hvac_mode = HVACMode.OFF
             await self.coordinator.client.async_set_target_temperature(self._id, MIN_C)
         else:
-            self._attr_hvac_modes = [HVACMode.HEAT]
+            if HVACMode.OFF in self._attr_hvac_modes:
+                self._attr_hvac_modes = [HVACMode.HEAT]
+            self._attr_hvac_mode = HVACMode.HEAT
         await self.coordinator.async_request_refresh()
