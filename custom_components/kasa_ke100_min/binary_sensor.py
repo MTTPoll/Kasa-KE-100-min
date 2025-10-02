@@ -13,7 +13,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     async_add_entities(entities)
 
 class T110BinarySensor(CoordinatorEntity[KasaCoordinator], BinarySensorEntity):
-        _attr_device_class = BinarySensorDeviceClass.DOOR
+    _attr_device_class = BinarySensorDeviceClass.DOOR
     _attr_has_entity_name = True
 
     def __init__(self, coordinator: KasaCoordinator, device_id: str) -> None:
@@ -32,4 +32,9 @@ class T110BinarySensor(CoordinatorEntity[KasaCoordinator], BinarySensorEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        return DeviceInfo(identifiers={(DOMAIN, self._id)}, manufacturer=MANUFACTURER, model=MODEL_T110, name=self.name)
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._id)},
+            manufacturer=MANUFACTURER,
+            model=MODEL_T110,
+            name=self.name,
+        )
