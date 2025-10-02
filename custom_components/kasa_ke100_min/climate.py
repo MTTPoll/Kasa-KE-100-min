@@ -1,11 +1,6 @@
 from __future__ import annotations
 from typing import Any
-from homeassistant.components.climate import ClimateEntity
-from homeassistant.components.climate.const import (
-    HVAC_MODE_HEAT,
-    HVAC_MODE_OFF,
-    SUPPORT_TARGET_TEMPERATURE,
-)
+from homeassistant.components.climate import ClimateEntity, HVACMode, ClimateEntityFeature
 from homeassistant.const import TEMP_CELSIUS, ATTR_TEMPERATURE
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.entity import DeviceInfo
@@ -26,9 +21,9 @@ async def async_setup_entry(hass, entry, async_add_entities):
     async_add_entities(entities)
 
 class KE100Climate(CoordinatorEntity[KasaCoordinator], ClimateEntity):
-    _attr_supported_features = SUPPORT_TARGET_TEMPERATURE
+    _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
     _attr_temperature_unit = TEMP_CELSIUS
-    _attr_hvac_modes = [HVAC_MODE_HEAT]
+    _attr_hvac_modes = [HVACMode.HEAT]
     _attr_has_entity_name = True
     _attr_target_temperature_step = STEP_C
     _attr_min_temp = MIN_C
@@ -68,10 +63,10 @@ class KE100Climate(CoordinatorEntity[KasaCoordinator], ClimateEntity):
         await self.coordinator.client.async_set_target_temperature(self._id, float(temp))
         await self.coordinator.async_request_refresh()
 
-    async def async_set_hvac_mode(self, hvac_mode: str) -> None:
-        if hvac_mode == HVAC_MODE_OFF:
-            self._attr_hvac_modes = [HVAC_MODE_HEAT, HVAC_MODE_OFF]
+    async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
+        if hvac_mode == HVACMode.OFF:
+            self._attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
             await self.coordinator.client.async_set_target_temperature(self._id, MIN_C)
         else:
-            self._attr_hvac_modes = [HVAC_MODE_HEAT]
+            self._attr_hvac_modes = [HVACMode.HEAT]
         await self.coordinator.async_request_refresh()

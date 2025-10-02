@@ -1,5 +1,5 @@
 from __future__ import annotations
-from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.components.binary_sensor import BinarySensorEntity, BinarySensorDeviceClass
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.entity import DeviceInfo
 
@@ -13,7 +13,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     async_add_entities(entities)
 
 class T110BinarySensor(CoordinatorEntity[KasaCoordinator], BinarySensorEntity):
-    _attr_device_class = "door"
+        _attr_device_class = BinarySensorDeviceClass.DOOR
     _attr_has_entity_name = True
 
     def __init__(self, coordinator: KasaCoordinator, device_id: str) -> None:
