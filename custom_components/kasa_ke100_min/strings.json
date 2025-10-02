@@ -1,0 +1,17 @@
+{
+  "title": "KASA KE100 Thermostat (Entity-Polling)",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Kasa Hub verbinden",
+        "description": "IP-Adresse des KH100 Hubs angeben.",
+        "data": {
+          "host": "Hub IP-Adresse"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Dieser Hub ist bereits eingerichtet."
+    }
+  }
+}
