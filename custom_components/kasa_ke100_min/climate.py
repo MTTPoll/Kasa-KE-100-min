@@ -1,7 +1,8 @@
 from __future__ import annotations
 from typing import Any
 from homeassistant.components.climate import ClimateEntity, HVACMode, ClimateEntityFeature
-from homeassistant.const import TEMP_CELSIUS, ATTR_TEMPERATURE
+from homeassistant.const import UnitOfTemperature
+from homeassistant.components.climate.const import ATTR_TEMPERATURE
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.entity import DeviceInfo
 
@@ -22,7 +23,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 class KE100Climate(CoordinatorEntity[KasaCoordinator], ClimateEntity):
     _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
-    _attr_temperature_unit = TEMP_CELSIUS
+    _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_hvac_modes = [HVACMode.HEAT]
     _attr_has_entity_name = True
     _attr_target_temperature_step = STEP_C
