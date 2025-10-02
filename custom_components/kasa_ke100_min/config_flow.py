@@ -4,7 +4,6 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
 
-# Use literals here to avoid import issues causing 'Invalid handler specified'
 DOMAIN = "kasa_ke100_min"
 CONF_HOST = "host"
 CONF_USERNAME = "username"
