@@ -1,0 +1,8 @@
+{
+  "name": "Kasa KE100 minimal",
+  "content_in_root": false,
+  "domains": ["kasa_ke100_min"],
+  "render_readme": true,
+  "zip_release": false,
+  "icon": "https://raw.githubusercontent.com/MTTPoll/Kasa-KE-100-min/main/custom_components/kasa_ke100_min/logo.png"
+}
