@@ -1,6 +1,6 @@
 {
   "domain": "kasa_ke100_min",
-  "name": "Kasa KE100 Minimal (Debug)",
+  "name": "Kasa KE100 Minimal",
   "version": "0.2.4",
   "config_flow": true,
   "documentation": "https://github.com/your-account/homeassistant-kasa-ke100-min",

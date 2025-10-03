@@ -1,14 +1,11 @@
 from __future__ import annotations
 from typing import Any
-import logging
 from homeassistant.components.climate import ClimateEntity, ClimateEntityFeature, HVACMode, HVACAction
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature, PRECISION_TENTHS
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.core import callback
 from .const import DOMAIN, MANUFACTURER, MODEL_KE100
 from .coordinator import KasaKe100Coordinator
-
-_LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 0
 
@@ -35,7 +32,6 @@ async def async_setup_entry(hass, entry, async_add_entities):
             ents.append(Ke100ClimateEntity(coordinator, dev_id))
             known.add(dev_id)
         if ents:
-            _LOGGER.debug("Adding %d climate entities", len(ents))
             async_add_entities(ents)
     _check_devices()
     entry.async_on_unload(coordinator.async_add_listener(_check_devices))
@@ -59,7 +55,6 @@ class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        _LOGGER.debug("Ke100ClimateEntity added: %s", self._attr_unique_id)
         self.async_write_ha_state()
 
     @property
@@ -97,15 +92,6 @@ class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
 
     @callback
     def _handle_coordinator_update(self) -> None:
-        _LOGGER.debug(
-            "Ke100ClimateEntity update | %s | %s: cur=%s, tgt=%s, hvac=%s/%s",
-            self.entity_id or self._attr_unique_id,
-            self.name,
-            self.current_temperature,
-            self.target_temperature,
-            self.hvac_mode,
-            self.hvac_action,
-        )
         self.async_write_ha_state()
 
     async def async_update(self) -> None:
