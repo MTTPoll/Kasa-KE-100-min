@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 from typing import Any
 from homeassistant.components.climate import ClimateEntity, ClimateEntityFeature, HVACMode, HVACAction
@@ -19,6 +20,20 @@ STATE_TO_MODE = {
     "off": HVACMode.OFF,
 }
 
+def _is_valid_trv(raw: dict) -> bool:
+    # Prefer explicit model check if present
+    model = raw.get("model") or raw.get("device_model")
+    if model is not None and model != MODEL_KE100:
+        return False
+    # Require a numeric target temperature and a known hvac_mode
+    tgt = raw.get("target_temp")
+    hvac_mode = raw.get("hvac_mode")
+    if not isinstance(tgt, (int, float)):
+        return False
+    if hvac_mode not in ("heat", "off"):
+        return False
+    return True
+
 async def async_setup_entry(hass, entry, async_add_entities):
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator: KasaKe100Coordinator = data["coordinator"]
@@ -27,7 +42,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     def _check_devices():
         ents = []
         for dev_id, raw in coordinator.data.get("devices", {}).items():
-            if dev_id in known or "target_temp" not in raw:
+            if dev_id in known or not _is_valid_trv(raw):
                 continue
             ents.append(Ke100ClimateEntity(coordinator, dev_id))
             known.add(dev_id)
