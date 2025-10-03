@@ -93,23 +93,21 @@ class KasaKe100Client:
     def _norm_power(*candidates: Any) -> Optional[bool]:
         """Normalisiert Power/Modus-Infos aus mehreren Quellen.
         - Modus-Strings 'off' → False
-        - Strings 'off/false/0/disabled' → False
+        - Strings 'off/false/0/disabled/standby' → False
+        - Strings 'on/heat/heating/manual/auto/schedule' → True
         - Bool/Int → bool
         - Nichts verwertbares → None
         """
         for val in candidates:
             if val is None:
                 continue
-            # mode strings
+            # mode/power strings
             if isinstance(val, str):
                 s = val.strip().lower()
-                if s == "off":
+                if s in ("off", "false", "0", "disabled", "standby"):
                     return False
-                if s in ("on", "heat", "heating", "manual", "auto", "schedule"):
+                if s in ("on", "heat", "heating", "manual", "auto", "schedule", "comfort"):
                     return True
-                if s in ("false", "0", "disabled", "standby"):
-                    return False
-                # unbekannt → weiter
                 continue
             if isinstance(val, (bool, int)):
                 return bool(val)
@@ -117,9 +115,7 @@ class KasaKe100Client:
 
     @staticmethod
     def _derive_actions(cur: float | None, tgt: float | None, explicit_heating: Optional[bool], power_on: Optional[bool]) -> tuple[str,str]:
-        """Ermittelt (hvac_mode, hvac_action) ohne Fenster-Logik.
-        Konservativ: Nur 'heating', wenn explizites Flag True ist.
-        """
+        """Ermittelt (hvac_mode, hvac_action) ohne Fenster-Logik."""
         if power_on is False:
             return ("off", "off")
         if explicit_heating is True:
@@ -128,7 +124,6 @@ class KasaKe100Client:
             return ("heat", "idle")
         if power_on is True:
             return ("heat", "idle")
-        # Unbekannt → konservativ
         return ("heat", "idle")
 
     @staticmethod
@@ -153,6 +148,25 @@ class KasaKe100Client:
             except Exception:
                 pass
         return None
+
+    def _debug_dump(self, dev_id: str, name: str, child: Any, thermo: Any, temp_mod: Any, device_mod: Any, cur: Any, tgt: Any, power_on: Any, explicit_heating: Any, hvac_mode: str, hvac_action: str) -> None:
+        """Detailliertes Debug-Logging für ein TRV."""
+        try:
+            def _s(o, fields):
+                out = {}
+                for f in fields:
+                    out[f] = getattr(o, f, None) if o is not None else None
+                return out
+            thermo_fields = ["current_temperature", "temperature", "target_temperature", "setpoint", "heating", "is_heating", "heating_active", "heat_on", "mode", "is_on", "power", "enabled", "active", "on"]
+            device_fields = ["mode", "is_on", "power", "enabled", "active", "on"]
+            child_fields  = ["mode", "is_on", "power", "enabled", "active", "on", "target_temperature", "setpoint", "target_temp"]
+            _LOGGER.debug(
+                "TRV DEBUG | id=%s name=%s | cur=%s tgt=%s | power_norm=%s | heat_flag=%s | hvac=(%s,%s) | thermo=%s | device=%s | child=%s",
+                dev_id, name, cur, tgt, power_on, explicit_heating, hvac_mode, hvac_action,
+                _s(thermo, thermo_fields), _s(device_mod, device_fields), _s(child, child_fields)
+            )
+        except Exception as e:
+            _LOGGER.debug("TRV DEBUG logging failed for %s: %s", dev_id, e)
 
     # -------- Poll --------
 
@@ -210,6 +224,9 @@ class KasaKe100Client:
                     explicit_heating = self._get_attr_any(thermo, ["heating", "is_heating", "heating_active", "heat_on"])
 
                     hvac_mode, hvac_action = self._derive_actions(cur, tgt, explicit_heating, power_on)
+
+                    # Detail-Debug
+                    self._debug_dump(dev_id, name, child, thermo, temp_mod, device_mod, cur, tgt, power_on, explicit_heating, hvac_mode, hvac_action)
 
                     battery = self._get_attr_any(child, ["battery"])
                     if battery is None and thermo is not None:
