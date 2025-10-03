@@ -15,6 +15,11 @@ STATE_TO_ACTION = {
     "off": HVACAction.OFF,
 }
 
+STATE_TO_MODE = {
+    "heat": HVACMode.HEAT,
+    "off": HVACMode.OFF,
+}
+
 async def async_setup_entry(hass, entry, async_add_entities):
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator: KasaKe100Coordinator = data["coordinator"]
@@ -44,9 +49,11 @@ class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
     _attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
     _attr_precision = PRECISION_TENTHS
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
-    # Setze Default-Werte, damit HA beim ersten write_ha_state nicht auf None trifft
     _attr_hvac_mode = HVACMode.OFF
     _attr_hvac_action = HVACAction.OFF
+    # feste Begrenzungen wie in offizieller TP-Link-Integration
+    _attr_min_temp = 5
+    _attr_max_temp = 30
 
     def __init__(self, coordinator: KasaKe100Coordinator, device_id: str) -> None:
         super().__init__(coordinator)
@@ -54,7 +61,6 @@ class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
         self._attr_unique_id = device_id
 
     async def async_added_to_hass(self) -> None:
-        # Einmal initiale Attribute setzen, damit die ersten State Writes funktionieren
         self._async_update_attrs()
 
     @property
@@ -81,11 +87,11 @@ class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
         self._attr_current_temperature = st.get("current_temp")
         self._attr_target_temperature = st.get("target_temp")
         hvac_action = st.get("hvac_action", "off")
+        hvac_mode = st.get("hvac_mode", "off")
         self._attr_hvac_action = STATE_TO_ACTION.get(hvac_action, HVACAction.OFF)
-        self._attr_hvac_mode = HVACMode.OFF if hvac_action == "off" else HVACMode.HEAT
+        self._attr_hvac_mode = STATE_TO_MODE.get(hvac_mode, HVACMode.OFF)
 
     async def async_update(self) -> None:
-        # Entities auf Coordinator-Cache basieren – kein eigener Poll
         return
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
