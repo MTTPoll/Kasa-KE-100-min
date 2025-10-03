@@ -20,17 +20,36 @@ STATE_TO_MODE = {
     "off": HVACMode.OFF,
 }
 
-def _is_valid_trv(raw: dict) -> bool:
-    model = raw.get("model") or raw.get("device_model")
-    if model is not None and model != MODEL_KE100:
+def _is_number(x) -> bool:
+    try:
+        float(x)
+        return True
+    except (TypeError, ValueError):
         return False
+
+def _is_valid_trv(raw: dict) -> bool:
+    # Prefer explicit model when available
+    model = (raw.get("model") or raw.get("device_model"))
     tgt = raw.get("target_temp")
     hvac_mode = raw.get("hvac_mode")
-    if not isinstance(tgt, (int, float)):
+
+    # Many sensors (e.g., T310) have humidity; TRV usually not. If humidity exists but no numeric target, skip.
+    if "humidity" in raw and not _is_number(tgt):
         return False
-    if hvac_mode not in ("heat", "off"):
-        return False
-    return True
+
+    if model is not None:
+        if model == MODEL_KE100:
+            # Accept if model is KE100; require at least some TRV signals
+            return _is_number(tgt) or hvac_mode in ("heat", "off") or "hvac_action" in raw
+        else:
+            return False
+
+    # Fallback: treat as TRV only if it exposes a numeric target temp or hvac_mode typical for TRV
+    if _is_number(tgt):
+        return True
+    if hvac_mode in ("heat", "off"):
+        return True
+    return False
 
 async def async_setup_entry(hass, entry, async_add_entities):
     data = hass.data[DOMAIN][entry.entry_id]
@@ -39,13 +58,14 @@ async def async_setup_entry(hass, entry, async_add_entities):
     known = set()
     def _check_devices():
         ents = []
-        for dev_id, raw in coordinator.data.get("devices", {}).items():
-            if dev_id in known or not _is_valid_trv(raw):
+        for dev_id, raw in (coordinator.data.get("devices") or {}).items():
+            if dev_id in known or not _is_valid_trv(raw or {}):
                 continue
             ents.append(Ke100ClimateEntity(coordinator, dev_id))
             known.add(dev_id)
         if ents:
             async_add_entities(ents)
+
     _check_devices()
     entry.async_on_unload(coordinator.async_add_listener(_check_devices))
 
@@ -72,7 +92,7 @@ class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
 
     @property
     def _st(self):
-        return self.coordinator.data.get("devices", {}).get(self._id) or {}
+        return (self.coordinator.data.get("devices") or {}).get(self._id) or {}
 
     @property
     def name(self) -> str:
@@ -93,7 +113,11 @@ class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
 
     @property
     def target_temperature(self) -> float | None:
-        return self._st.get("target_temp")
+        tgt = self._st.get("target_temp")
+        try:
+            return float(tgt) if tgt is not None else None
+        except (TypeError, ValueError):
+            return None
 
     @property
     def hvac_mode(self) -> HVACMode:
