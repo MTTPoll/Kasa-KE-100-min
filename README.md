@@ -45,8 +45,7 @@ Eine minimalistische **Home Assistant Custom Integration** für den **TP-Link Ka
 
 ## Changelog
 
-### 0.3.0
+### 0.2.4
 - Ist-Temperatur wird jetzt korrekt gepollt und aktualisiert.
 - Feste Minimal-/Maximaltemperatur auf 5–30 °C.
 - Polling-Intervall konfigurierbar über Optionsflow.
-- README.md erweitert (inkl. HACS-Installation mit Repository-Link).
