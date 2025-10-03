@@ -90,28 +90,35 @@ class KasaKe100Client:
         return default
 
     @staticmethod
-    def _norm_power(power_on: Any, mode: Any) -> Optional[bool]:
-        """Normalisiert Power/Modus in bool oder None.
-        - mode == 'off' → False
-        - power_on in ('off','false','0') → False
-        - True/False → wie gegeben
-        - None → None
+    def _norm_power(*candidates: Any) -> Optional[bool]:
+        """Normalisiert Power/Modus-Infos aus mehreren Quellen.
+        - Modus-Strings 'off' → False
+        - Strings 'off/false/0/disabled' → False
+        - Bool/Int → bool
+        - Nichts verwertbares → None
         """
-        # Modus-String hat Priorität
-        if isinstance(mode, str) and mode.strip().lower() == "off":
-            return False
-        # Allgemeine Powerflags
-        if isinstance(power_on, str):
-            return power_on.strip().lower() not in ("off", "false", "0", "disabled")
-        if isinstance(power_on, (bool, int)):
-            return bool(power_on)
+        for val in candidates:
+            if val is None:
+                continue
+            # mode strings
+            if isinstance(val, str):
+                s = val.strip().lower()
+                if s == "off":
+                    return False
+                if s in ("on", "heat", "heating", "manual", "auto", "schedule"):
+                    return True
+                if s in ("false", "0", "disabled", "standby"):
+                    return False
+                # unbekannt → weiter
+                continue
+            if isinstance(val, (bool, int)):
+                return bool(val)
         return None
 
     @staticmethod
     def _derive_actions(cur: float | None, tgt: float | None, explicit_heating: Optional[bool], power_on: Optional[bool]) -> tuple[str,str]:
         """Ermittelt (hvac_mode, hvac_action) ohne Fenster-Logik.
-        **Konservativ**: Nur 'heating', wenn ein explizites Flag True ist.
-        Sonst: wenn power off → (off, off); wenn power on → (heat, idle).
+        Konservativ: Nur 'heating', wenn explizites Flag True ist.
         """
         if power_on is False:
             return ("off", "off")
@@ -119,7 +126,6 @@ class KasaKe100Client:
             return ("heat", "heating")
         if explicit_heating is False:
             return ("heat", "idle")
-        # Kein explizites Flag → nicht aus Temperaturen raten (vermeidet Fehlanzeigen)
         if power_on is True:
             return ("heat", "idle")
         # Unbekannt → konservativ
@@ -178,6 +184,7 @@ class KasaKe100Client:
                 # Module
                 thermo = self._get_module(modules, getattr(self._Module, "Thermostat", None), "Thermostat")
                 temp_mod = self._get_module(modules, getattr(self._Module, "TemperatureSensor", None), "TemperatureSensor")
+                device_mod = self._get_module(modules, getattr(self._Module, "DeviceModule", None), "DeviceModule")
                 contact = self._get_module(modules, getattr(self._Module, "ContactSensor", None), "ContactSensor")
 
                 if thermo is not None or temp_mod is not None:
@@ -192,9 +199,13 @@ class KasaKe100Client:
                         tgt = self._get_attr_any(child, ["target_temperature", "setpoint", "target_temp"])
 
                     # Power / Mode / explicit heating (ohne Fensterlogik)
-                    power_on_raw = self._get_attr_any(thermo, ["is_on", "power", "enabled", "active", "on"])
-                    mode_raw = self._get_attr_any(thermo, ["mode"])
-                    power_on = self._norm_power(power_on_raw, mode_raw)
+                    power_on = self._norm_power(
+                        self._get_attr_any(thermo, ["is_on", "power", "enabled", "active", "on"]),
+                        self._get_attr_any(thermo, ["mode"]),
+                        self._get_attr_any(device_mod, ["is_on", "power", "enabled", "active", "on"]),
+                        self._get_attr_any(device_mod, ["mode"]),
+                        self._get_attr_any(child, ["is_on", "power", "enabled", "active", "on", "mode"]),
+                    )
 
                     explicit_heating = self._get_attr_any(thermo, ["heating", "is_heating", "heating_active", "heat_on"])
 
