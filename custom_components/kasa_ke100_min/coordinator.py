@@ -2,6 +2,7 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any, Dict, Optional
 import time
+import logging
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from .const import DOMAIN, DEFAULT_SCAN_INTERVAL
@@ -13,7 +14,7 @@ class KasaKe100Coordinator(DataUpdateCoordinator[Dict[str, Any]]):
         interval = timedelta(seconds=scan_interval_seconds) if scan_interval_seconds else DEFAULT_SCAN_INTERVAL
         super().__init__(
             hass,
-            logger=None,
+            logging.getLogger(__name__),  # Provide a valid logger (required by HA)
             name=f"{DOMAIN}_coordinator",
             update_interval=interval,
         )
@@ -24,5 +25,4 @@ class KasaKe100Coordinator(DataUpdateCoordinator[Dict[str, Any]]):
             data = await self.client.async_refresh()
         except Exception as err:
             raise UpdateFailed(err) from err
-
         return data
