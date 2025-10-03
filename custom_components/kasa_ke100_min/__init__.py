@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 import logging
 from homeassistant.config_entries import ConfigEntry
@@ -9,7 +10,8 @@ from .coordinator import KasaKe100Coordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[str] = ["climate", "binary_sensor"]
+# Add 'sensor' so T310 are set up as sensors alongside existing platforms
+PLATFORMS: list[str] = ["climate", "sensor", "binary_sensor"]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     host = entry.data.get(CONF_HOST)

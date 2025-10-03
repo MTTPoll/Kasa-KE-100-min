@@ -21,11 +21,9 @@ STATE_TO_MODE = {
 }
 
 def _is_valid_trv(raw: dict) -> bool:
-    # Prefer explicit model check if present
     model = raw.get("model") or raw.get("device_model")
     if model is not None and model != MODEL_KE100:
         return False
-    # Require a numeric target temperature and a known hvac_mode
     tgt = raw.get("target_temp")
     hvac_mode = raw.get("hvac_mode")
     if not isinstance(tgt, (int, float)):
