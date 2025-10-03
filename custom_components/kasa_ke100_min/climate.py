@@ -62,6 +62,8 @@ class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
         self._attr_unique_id = device_id
 
     async def async_added_to_hass(self) -> None:
+        # WICHTIG: Registrierung beim Coordinator, sonst kommen keine Updates!
+        await super().async_added_to_hass()
         self._async_update_attrs()
 
     @property
@@ -94,19 +96,7 @@ class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
 
     @callback
     def _handle_coordinator_update(self) -> None:
-        prev = getattr(self, "_attr_current_temperature", None)
         self._async_update_attrs()
-        # INFO-Level, damit es ohne logger-config sichtbar ist
-        _LOGGER.info(
-            "Ke100ClimateEntity update | %s | %s: current %s -> %s, target=%s, hvac=%s/%s",
-            self.entity_id or self._attr_unique_id,
-            self.name,
-            prev,
-            getattr(self, "_attr_current_temperature", None),
-            getattr(self, "_attr_target_temperature", None),
-            getattr(self, "_attr_hvac_mode", None),
-            getattr(self, "_attr_hvac_action", None),
-        )
         super()._handle_coordinator_update()
 
     async def async_update(self) -> None:
