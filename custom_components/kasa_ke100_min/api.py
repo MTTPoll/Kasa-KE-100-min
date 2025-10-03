@@ -14,7 +14,8 @@ class TRVState:
     name: str
     current_temp: float | None
     target_temp: float | None
-    hvac_action: str  # "heating" | "idle" | "off"
+    hvac_mode: str           # "heat" | "off"
+    hvac_action: str         # "heating" | "idle" | "off"
     battery: int | None
     online: bool = True
 
@@ -46,7 +47,6 @@ class KasaKe100Client:
         async with self._lock:
             if self._connected and self._hub is not None:
                 return
-            # Lazy import, damit Requirements bereits installiert sind
             try:
                 from kasa import Discover, Module  # type: ignore
             except Exception as e:
@@ -80,33 +80,63 @@ class KasaKe100Client:
         return hex(id(dev))
 
     @staticmethod
-    def _derive_hvac_action(cur: float | None, tgt: float | None, explicit_heating: Optional[bool] = None) -> str:
-        if isinstance(explicit_heating, bool):
-            return "heating" if explicit_heating else "idle"
-        if cur is None or tgt is None:
-            return "idle"
-        try:
-            return "heating" if float(cur) < float(tgt) else "idle"
-        except Exception:
-            return "idle"
+    def _get_attr_any(obj, names: list[str], default=None):
+        for n in names:
+            if hasattr(obj, n):
+                try:
+                    return getattr(obj, n)
+                except Exception:
+                    continue
+        return default
+
+    @staticmethod
+    def _norm_power(power_on: Any, mode: Any) -> Optional[bool]:
+        """Normalisiert Power/Modus in bool oder None.
+        - mode == 'off' → False
+        - power_on in ('off','false','0') → False
+        - True/False → wie gegeben
+        - None → None
+        """
+        # Modus-String hat Priorität
+        if isinstance(mode, str) and mode.strip().lower() == "off":
+            return False
+        # Allgemeine Powerflags
+        if isinstance(power_on, str):
+            return power_on.strip().lower() not in ("off", "false", "0", "disabled")
+        if isinstance(power_on, (bool, int)):
+            return bool(power_on)
+        return None
+
+    @staticmethod
+    def _derive_actions(cur: float | None, tgt: float | None, explicit_heating: Optional[bool], power_on: Optional[bool]) -> tuple[str,str]:
+        """Ermittelt (hvac_mode, hvac_action) ohne Fenster-Logik.
+        **Konservativ**: Nur 'heating', wenn ein explizites Flag True ist.
+        Sonst: wenn power off → (off, off); wenn power on → (heat, idle).
+        """
+        if power_on is False:
+            return ("off", "off")
+        if explicit_heating is True:
+            return ("heat", "heating")
+        if explicit_heating is False:
+            return ("heat", "idle")
+        # Kein explizites Flag → nicht aus Temperaturen raten (vermeidet Fehlanzeigen)
+        if power_on is True:
+            return ("heat", "idle")
+        # Unbekannt → konservativ
+        return ("heat", "idle")
 
     @staticmethod
     def _get_module(modules: Any, key: Any, alt_key: Optional[str] = None):
-        """Robuster Zugriff: Module können per Enum-Schlüssel oder per String benannt sein."""
         if not modules:
             return None
-        # Dict-artig?
         if hasattr(modules, "get"):
-            # 1) direkter key (Enum)
             mod = modules.get(key)
             if mod is not None:
                 return mod
-            # 2) alternativer String-Name
             if alt_key is not None:
                 mod = modules.get(alt_key)
                 if mod is not None:
                     return mod
-            # 3) string keys (fallback): vergleiche Name-case-insensitiv
             try:
                 for k, v in modules.items():
                     ks = str(k).lower()
@@ -139,57 +169,49 @@ class KasaKe100Client:
                 name = getattr(child, "alias", None) or getattr(child, "name", None) or f"Device {dev_id}"
 
                 modules = getattr(child, "modules", {}) or {}
-                # Debug: zeige Modulnamen (einmalig pro Gerät)
                 try:
                     mod_keys = list(modules.keys()) if hasattr(modules, "keys") else str(type(modules))
                     _LOGGER.debug("Child %s modules: %s", dev_id, mod_keys)
                 except Exception:
                     pass
 
-                # 1) Thermostat / TRV (Enum oder String)
+                # Module
                 thermo = self._get_module(modules, getattr(self._Module, "Thermostat", None), "Thermostat")
-                # 2) TemperatureSensor als Fallback für current_temp
                 temp_mod = self._get_module(modules, getattr(self._Module, "TemperatureSensor", None), "TemperatureSensor")
-                # 3) ContactSensor
                 contact = self._get_module(modules, getattr(self._Module, "ContactSensor", None), "ContactSensor")
 
                 if thermo is not None or temp_mod is not None:
-                    # Current Temperature
-                    cur = None
-                    if thermo is not None:
-                        cur = getattr(thermo, "current_temperature", None)
-                        if cur is None:
-                            cur = getattr(thermo, "temperature", None)
-                    if cur is None and temp_mod is not None:
-                        cur = getattr(temp_mod, "current_temperature", None) or getattr(temp_mod, "temperature", None)
+                    # Ist-Temp
+                    cur = self._get_attr_any(thermo, ["current_temperature", "temperature"]) if thermo is not None else None
+                    if cur is None:
+                        cur = self._get_attr_any(temp_mod, ["current_temperature", "temperature"]) if temp_mod is not None else None
 
-                    # Target Temperature
-                    tgt = None
-                    if thermo is not None:
-                        tgt = getattr(thermo, "target_temperature", None) or getattr(thermo, "setpoint", None)
+                    # Soll-Temp
+                    tgt = self._get_attr_any(thermo, ["target_temperature", "setpoint"]) if thermo is not None else None
                     if tgt is None:
-                        # Manche Firmwares exposen das Setpoint am Child selbst
-                        for attr in ("target_temperature", "setpoint", "target_temp"):
-                            tgt = getattr(child, attr, None)
-                            if tgt is not None:
-                                break
+                        tgt = self._get_attr_any(child, ["target_temperature", "setpoint", "target_temp"])
 
-                    # HVAC Action
-                    explicit_heating = getattr(thermo, "heating", None) if thermo is not None else None
-                    hvac_action = self._derive_hvac_action(cur, tgt, explicit_heating)
+                    # Power / Mode / explicit heating (ohne Fensterlogik)
+                    power_on_raw = self._get_attr_any(thermo, ["is_on", "power", "enabled", "active", "on"])
+                    mode_raw = self._get_attr_any(thermo, ["mode"])
+                    power_on = self._norm_power(power_on_raw, mode_raw)
 
-                    # Battery (best effort)
-                    battery = getattr(child, "battery", None)
+                    explicit_heating = self._get_attr_any(thermo, ["heating", "is_heating", "heating_active", "heat_on"])
+
+                    hvac_mode, hvac_action = self._derive_actions(cur, tgt, explicit_heating, power_on)
+
+                    battery = self._get_attr_any(child, ["battery"])
                     if battery is None and thermo is not None:
-                        battery = getattr(thermo, "battery", None)
+                        battery = self._get_attr_any(thermo, ["battery"])
                     if battery is None and temp_mod is not None:
-                        battery = getattr(temp_mod, "battery", None)
+                        battery = self._get_attr_any(temp_mod, ["battery"])
 
                     devices[dev_id] = TRVState(
                         device_id=dev_id,
                         name=name,
                         current_temp=cur,
                         target_temp=tgt,
+                        hvac_mode=hvac_mode,
                         hvac_action=hvac_action,
                         battery=battery,
                         online=True,
@@ -197,8 +219,8 @@ class KasaKe100Client:
                     continue
 
                 if contact is not None:
-                    is_open = bool(getattr(contact, "is_open", False))
-                    battery = getattr(child, "battery", None) or getattr(contact, "battery", None)
+                    is_open = bool(self._get_attr_any(contact, ["is_open"], False))
+                    battery = self._get_attr_any(child, ["battery"]) or self._get_attr_any(contact, ["battery"])
                     devices[dev_id] = ContactState(
                         device_id=dev_id,
                         name=name,
@@ -208,7 +230,6 @@ class KasaKe100Client:
                     )
                     continue
 
-                # Unbekannt – loggen
                 _LOGGER.debug("Unknown child modules for %s: %s", dev_id, list(modules) if hasattr(modules, "keys") else modules)
 
             self._devices = devices
@@ -235,6 +256,7 @@ class KasaKe100Client:
                 raise ValueError(f"Device {device_id} not found")
 
             modules = getattr(child, "modules", {}) or {}
+            # Bevorzugt Thermostat
             thermo = self._get_module(modules, getattr(self._Module, "Thermostat", None), "Thermostat")
 
             if thermo is not None:
@@ -244,7 +266,7 @@ class KasaKe100Client:
                 await setter(float(temperature))
                 return
 
-            # Fallback: falls kein Thermostat-Modul existiert, versuche generisch
+            # Fallback
             if hasattr(child, "set_target_temperature"):
                 await child.set_target_temperature(float(temperature))
                 return
