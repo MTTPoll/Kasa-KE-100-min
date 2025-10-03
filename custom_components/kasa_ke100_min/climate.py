@@ -17,7 +17,6 @@ STATE_TO_ACTION = {
     "heating": HVACAction.HEATING,
     "off": HVACAction.OFF,
 }
-
 STATE_TO_MODE = {
     "heat": HVACMode.HEAT,
     "off": HVACMode.OFF,
@@ -28,7 +27,6 @@ async def async_setup_entry(hass, entry, async_add_entities):
     coordinator: KasaKe100Coordinator = data["coordinator"]
 
     known = set()
-
     def _check_devices():
         ents = []
         for dev_id, raw in coordinator.data.get("devices", {}).items():
@@ -38,7 +36,6 @@ async def async_setup_entry(hass, entry, async_add_entities):
             known.add(dev_id)
         if ents:
             async_add_entities(ents)
-
     _check_devices()
     entry.async_on_unload(coordinator.async_add_listener(_check_devices))
 
@@ -51,8 +48,6 @@ class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
     _attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
     _attr_precision = PRECISION_TENTHS
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
-    _attr_hvac_mode = HVACMode.OFF
-    _attr_hvac_action = HVACAction.OFF
     _attr_min_temp = 5
     _attr_max_temp = 30
 
@@ -62,18 +57,18 @@ class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
         self._attr_unique_id = device_id
 
     async def async_added_to_hass(self) -> None:
-        # WICHTIG: Registrierung beim Coordinator, sonst kommen keine Updates!
         await super().async_added_to_hass()
-        self._async_update_attrs()
+        # sofort einmal Zustand schreiben
+        self.async_write_ha_state()
 
+    # --- Live-Properties: lesen direkt aus dem Coordinator-Cache ---
     @property
     def _st(self):
-        return self.coordinator.data.get("devices", {}).get(self._id)
+        return self.coordinator.data.get("devices", {}).get(self._id) or {}
 
     @property
     def name(self) -> str:
-        st = self._st
-        return st.get("name") if st else f"KE100 {self._id}"
+        return self._st.get("name") or f"KE100 {self._id}"
 
     @property
     def device_info(self):
@@ -84,20 +79,26 @@ class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
             "name": self.name,
         }
 
-    @callback
-    def _async_update_attrs(self) -> None:
-        st = self._st or {}
-        self._attr_current_temperature = st.get("current_temp")
-        self._attr_target_temperature = st.get("target_temp")
-        hvac_action = st.get("hvac_action", "off")
-        hvac_mode = st.get("hvac_mode", "off")
-        self._attr_hvac_action = STATE_TO_ACTION.get(hvac_action, HVACAction.OFF)
-        self._attr_hvac_mode = STATE_TO_MODE.get(hvac_mode, HVACMode.OFF)
+    @property
+    def current_temperature(self) -> float | None:
+        return self._st.get("current_temp")
 
+    @property
+    def target_temperature(self) -> float | None:
+        return self._st.get("target_temp")
+
+    @property
+    def hvac_mode(self) -> HVACMode:
+        return STATE_TO_MODE.get(self._st.get("hvac_mode"), HVACMode.OFF)
+
+    @property
+    def hvac_action(self) -> HVACAction:
+        return STATE_TO_ACTION.get(self._st.get("hvac_action"), HVACAction.OFF)
+
+    # --- Updates vom Coordinator -> einfach neu schreiben ---
     @callback
     def _handle_coordinator_update(self) -> None:
-        self._async_update_attrs()
-        super()._handle_coordinator_update()
+        self.async_write_ha_state()
 
     async def async_update(self) -> None:
         return
