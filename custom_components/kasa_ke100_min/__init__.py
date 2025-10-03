@@ -1,28 +1,18 @@
 from __future__ import annotations
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
-from .const import DOMAIN, PLATFORMS, CONF_HOST
-from .api import KH100Client
-from .coordinator import KasaCoordinator
-
-CONF_USERNAME = "username"
-CONF_PASSWORD = "password"
-
-async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    return True
+from .const import DOMAIN, PLATFORMS
+from .api import KasaKe100Client
+from .coordinator import KasaKe100Coordinator
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    host = entry.data[CONF_HOST]
-    username = entry.data.get(CONF_USERNAME)
-    password = entry.data.get(CONF_PASSWORD)
+    host = entry.data.get("host")
+    username = entry.data.get("username")
+    password = entry.data.get("password")
+    scan_interval = entry.data.get("scan_interval")  # Sekunden (int) oder None
 
-    client = KH100Client(host, username=username, password=password)
-    await client.async_connect()
-    if not client.connected:
-        raise ConfigEntryNotReady("Cannot connect to KH100")
-
-    coordinator = KasaCoordinator(hass, client)
+    client = KasaKe100Client(host, username, password)
+    coordinator = KasaKe100Coordinator(hass, client, scan_interval_seconds=scan_interval)
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
@@ -34,7 +24,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    data = hass.data[DOMAIN].pop(entry.entry_id)
-    await data["client"].async_close()
-    return unload_ok
+    stored = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+    ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if stored:
+        await stored["client"].async_close()
+    return ok
