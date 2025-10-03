@@ -6,8 +6,6 @@ import logging
 
 _LOGGER = logging.getLogger(__name__)
 
-# ---- Datenmodelle ----
-
 @dataclass
 class TRVState:
     device_id: str
@@ -28,8 +26,6 @@ class ContactState:
     online: bool = True
 
 class KasaKe100Client:
-    """Client kapselt KH100 Hub-Kommunikation über python-kasa (lazy import)."""
-
     def __init__(self, host: str, username: str | None = None, password: str | None = None) -> None:
         self._host = host
         self._username = username
@@ -39,9 +35,7 @@ class KasaKe100Client:
         self._connected = False
         self._devices: Dict[str, TRVState | ContactState] = {}
         self._child_by_id: Dict[str, Any] = {}
-        self._Module = None  # wird nach lazy-import gesetzt
-
-    # -------- Verbindung --------
+        self._Module = None
 
     async def async_connect(self) -> None:
         async with self._lock:
@@ -61,15 +55,12 @@ class KasaKe100Client:
             if self._hub is None:
                 raise RuntimeError(f"Cannot discover KH100 hub at {self._host}")
             self._connected = True
-            _LOGGER.debug("Connected to KH100 hub at %s", self._host)
 
     async def async_close(self) -> None:
         async with self._lock:
             self._connected = False
             self._hub = None
             self._child_by_id.clear()
-
-    # -------- Hilfen --------
 
     @staticmethod
     def _derive_device_id(dev) -> str:
@@ -91,15 +82,11 @@ class KasaKe100Client:
 
     @staticmethod
     def _norm_power(*candidates: Any) -> Optional[bool]:
-        """Normalisiert Power/Modus-Infos aus mehreren Quellen.
-        Akzeptiert auch Enum-ähnliche Objekte mit .name/.value und str().
-        """
         def _to_token(v: Any) -> Optional[str]:
             if v is None:
                 return None
             if isinstance(v, str):
                 return v.strip().lower()
-            # Enum-artig?
             name = getattr(v, "name", None)
             if isinstance(name, str):
                 return name.strip().lower()
@@ -175,8 +162,6 @@ class KasaKe100Client:
                 pass
         return None
 
-    # -------- Poll --------
-
     async def async_refresh(self) -> Dict[str, Dict[str, Any]]:
         await self.async_connect()
         async with self._lock:
@@ -188,8 +173,8 @@ class KasaKe100Client:
             for child in getattr(self._hub, "children", []):
                 try:
                     await child.update()
-                except Exception as e:
-                    _LOGGER.warning("Child update failed: %s", e)
+                except Exception:
+                    continue
 
                 dev_id = self._derive_device_id(child)
                 self._child_by_id[dev_id] = child
@@ -197,28 +182,23 @@ class KasaKe100Client:
 
                 modules = getattr(child, "modules", {}) or {}
 
-                # Module
                 thermo = self._get_module(modules, getattr(self._Module, "Thermostat", None), "Thermostat")
                 temp_mod = self._get_module(modules, getattr(self._Module, "TemperatureSensor", None), "TemperatureSensor")
                 device_mod = self._get_module(modules, getattr(self._Module, "DeviceModule", None), "DeviceModule")
                 contact = self._get_module(modules, getattr(self._Module, "ContactSensor", None), "ContactSensor")
 
                 if thermo is not None or temp_mod is not None:
-                    # Ist-Temp
                     cur = self._get_attr_any(thermo, ["current_temperature", "temperature"]) if thermo is not None else None
                     if cur is None:
                         cur = self._get_attr_any(temp_mod, ["current_temperature", "temperature"]) if temp_mod is not None else None
 
-                    # Soll-Temp
                     tgt = self._get_attr_any(thermo, ["target_temperature", "setpoint"]) if thermo is not None else None
                     if tgt is None:
                         tgt = self._get_attr_any(child, ["target_temperature", "setpoint", "target_temp"])
 
-                    # 1) Direkte Auswertung des Thermostat-State (Enum/String)
                     mode_obj = self._get_attr_any(thermo, ["mode"])
                     hvac_from_mode = self._thermo_mode_to_hvac(mode_obj)
 
-                    # 2) Power/Heiz-Flags (Fallbacks)
                     power_on = self._norm_power(
                         mode_obj,
                         self._get_attr_any(thermo, ["is_on", "power", "enabled", "active", "on"]),
@@ -274,8 +254,6 @@ class KasaKe100Client:
                 out["devices"][dev_id] = asdict(st)
             return out
 
-    # -------- Write-APIs --------
-
     def _get_child(self, device_id: str):
         dev = self._child_by_id.get(device_id)
         if dev is None and self._hub is not None:
@@ -290,20 +268,30 @@ class KasaKe100Client:
             child = self._get_child(device_id)
             if child is None:
                 raise ValueError(f"Device {device_id} not found")
-
             modules = getattr(child, "modules", {}) or {}
-            # Bevorzugt Thermostat
             thermo = self._get_module(modules, getattr(self._Module, "Thermostat", None), "Thermostat")
-
             if thermo is not None:
                 setter = getattr(thermo, "set_target_temperature", None) or getattr(thermo, "set_temperature", None)
                 if setter is None:
                     raise RuntimeError("Thermostat module has no setter for target temperature")
                 await setter(float(temperature))
                 return
-
-            # Fallback
             if hasattr(child, "set_target_temperature"):
                 await child.set_target_temperature(float(temperature))
                 return
             raise RuntimeError("No way to set target temperature on this device")
+
+    async def async_set_state(self, device_id: str, on: bool) -> None:
+        async with self._lock:
+            child = self._get_child(device_id)
+            if child is None:
+                raise ValueError(f"Device {device_id} not found")
+            modules = getattr(child, "modules", {}) or {}
+            device_mod = self._get_module(modules, getattr(self._Module, "DeviceModule", None), "DeviceModule")
+            if device_mod and hasattr(device_mod, "set_on"):
+                await device_mod.set_on(bool(on))
+                return
+            if hasattr(child, "set_on"):
+                await child.set_on(bool(on))
+                return
+            raise RuntimeError("No way to switch device on/off")

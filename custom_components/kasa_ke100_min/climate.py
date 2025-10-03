@@ -1,14 +1,11 @@
 from __future__ import annotations
 from typing import Any
-import logging
 from homeassistant.components.climate import ClimateEntity, ClimateEntityFeature, HVACMode, HVACAction
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature, PRECISION_TENTHS
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.core import callback
 from .const import DOMAIN, MANUFACTURER, MODEL_KE100
 from .coordinator import KasaKe100Coordinator
-
-_LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 0
 
@@ -58,10 +55,8 @@ class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        # sofort einmal Zustand schreiben
         self.async_write_ha_state()
 
-    # --- Live-Properties: lesen direkt aus dem Coordinator-Cache ---
     @property
     def _st(self):
         return self.coordinator.data.get("devices", {}).get(self._id) or {}
@@ -95,7 +90,6 @@ class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
     def hvac_action(self) -> HVACAction:
         return STATE_TO_ACTION.get(self._st.get("hvac_action"), HVACAction.OFF)
 
-    # --- Updates vom Coordinator -> einfach neu schreiben ---
     @callback
     def _handle_coordinator_update(self) -> None:
         self.async_write_ha_state()
