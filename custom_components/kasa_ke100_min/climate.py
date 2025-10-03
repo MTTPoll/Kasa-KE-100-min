@@ -44,11 +44,18 @@ class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
     _attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
     _attr_precision = PRECISION_TENTHS
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    # Setze Default-Werte, damit HA beim ersten write_ha_state nicht auf None trifft
+    _attr_hvac_mode = HVACMode.OFF
+    _attr_hvac_action = HVACAction.OFF
 
     def __init__(self, coordinator: KasaKe100Coordinator, device_id: str) -> None:
         super().__init__(coordinator)
         self._id = device_id
         self._attr_unique_id = device_id
+
+    async def async_added_to_hass(self) -> None:
+        # Einmal initiale Attribute setzen, damit die ersten State Writes funktionieren
+        self._async_update_attrs()
 
     @property
     def _st(self):
