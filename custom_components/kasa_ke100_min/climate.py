@@ -1,53 +1,52 @@
 
 from __future__ import annotations
-from typing import Any
+from typing import Any, Dict, Set, Optional, List
+import re
 from homeassistant.components.climate import ClimateEntity, ClimateEntityFeature, HVACMode, HVACAction
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature, PRECISION_TENTHS
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.core import callback
+from homeassistant.helpers import entity_registry as er
 from .const import DOMAIN, MANUFACTURER, MODEL_KE100
 from .coordinator import KasaKe100Coordinator
 
 PARALLEL_UPDATES = 0
 
-STATE_TO_ACTION = {
-    "idle": HVACAction.IDLE,
-    "heating": HVACAction.HEATING,
-    "off": HVACAction.OFF,
-}
-STATE_TO_MODE = {
-    "heat": HVACMode.HEAT,
-    "off": HVACMode.OFF,
-}
-
-def _is_number(x) -> bool:
+def _str_to_float(x):
     try:
-        float(x)
-        return True
+        return float(x) if x is not None else None
     except (TypeError, ValueError):
+        return None
+
+def _slugify(name: str) -> str:
+    s = name.lower()
+    s = re.sub(r"[^\w\s-]", "", s)
+    s = re.sub(r"[\s-]+", "_", s).strip("_")
+    return s
+
+def _is_t310(dev_id: str, raw: Dict[str, Any]) -> bool:
+    if not isinstance(raw, dict):
         return False
-
-def _is_valid_trv(raw: dict) -> bool:
-    # Prefer explicit model when available
-    model = (raw.get("model") or raw.get("device_model"))
-    tgt = raw.get("target_temp")
-    hvac_mode = raw.get("hvac_mode")
-
-    # Many sensors (e.g., T310) have humidity; TRV usually not. If humidity exists but no numeric target, skip.
-    if "humidity" in raw and not _is_number(tgt):
-        return False
-
-    if model is not None:
-        if model == MODEL_KE100:
-            # Accept if model is KE100; require at least some TRV signals
-            return _is_number(tgt) or hvac_mode in ("heat", "off") or "hvac_action" in raw
-        else:
-            return False
-
-    # Fallback: treat as TRV only if it exposes a numeric target temp or hvac_mode typical for TRV
-    if _is_number(tgt):
+    if "is_open" in raw:
+        return False  # contact sensor
+    has_temp = raw.get("current_temp") is not None
+    tgt = _str_to_float(raw.get("target_temp"))
+    model = (raw.get("model") or raw.get("device_model") or "").upper()
+    if "T310" in model or "T315" in model:
         return True
-    if hvac_mode in ("heat", "off"):
+    if dev_id.startswith("802E") and has_temp and tgt is None:
+        return True
+    if ("humidity" in raw) and tgt is None:
+        return True
+    return False
+
+def _is_ke100(dev_id: str, raw: Dict[str, Any]) -> bool:
+    model = raw.get("model") or raw.get("device_model")
+    if model == MODEL_KE100:
+        return True
+    tgt = _str_to_float(raw.get("target_temp"))
+    if tgt is not None:
+        return True
+    if dev_id.startswith("8035"):
         return True
     return False
 
@@ -55,26 +54,36 @@ async def async_setup_entry(hass, entry, async_add_entities):
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator: KasaKe100Coordinator = data["coordinator"]
 
-    known = set()
+    known: set[str] = set()
+
     def _check_devices():
         ents = []
-        for dev_id, raw in (coordinator.data.get("devices") or {}).items():
-            if dev_id in known or not _is_valid_trv(raw or {}):
+        devices = (coordinator.data.get("devices") or {})
+        for dev_id, raw in devices.items():
+            if dev_id in known:
                 continue
-            ents.append(Ke100ClimateEntity(coordinator, dev_id))
-            known.add(dev_id)
+            raw = raw or {}
+            if _is_ke100(dev_id, raw) and not _is_t310(dev_id, raw):
+                ents.append(Ke100ClimateEntity(coordinator, dev_id))
+                known.add(dev_id)
+                continue
+            if _is_t310(dev_id, raw):
+                ents.append(T310ClimateDisplayEntity(coordinator, dev_id))
+                known.add(dev_id)
+                continue
         if ents:
             async_add_entities(ents)
 
     _check_devices()
     entry.async_on_unload(coordinator.async_add_listener(_check_devices))
 
+# ---- KE100 TRV (steuerbar) ----
 class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
-    _attr_supported_features = (
-        ClimateEntityFeature.TARGET_TEMPERATURE
-        | ClimateEntityFeature.TURN_ON
-        | ClimateEntityFeature.TURN_OFF
-    )
+    _attr_supported_features: Set[ClimateEntityFeature] = {
+        ClimateEntityFeature.TARGET_TEMPERATURE,
+        ClimateEntityFeature.TURN_ON,
+        ClimateEntityFeature.TURN_OFF,
+    }
     _attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
     _attr_precision = PRECISION_TENTHS
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
@@ -85,10 +94,6 @@ class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
         super().__init__(coordinator)
         self._id = device_id
         self._attr_unique_id = device_id
-
-    async def async_added_to_hass(self) -> None:
-        await super().async_added_to_hass()
-        self.async_write_ha_state()
 
     @property
     def _st(self):
@@ -109,30 +114,26 @@ class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
 
     @property
     def current_temperature(self) -> float | None:
-        return self._st.get("current_temp")
+        return _str_to_float(self._st.get("current_temp"))
 
     @property
     def target_temperature(self) -> float | None:
-        tgt = self._st.get("target_temp")
-        try:
-            return float(tgt) if tgt is not None else None
-        except (TypeError, ValueError):
-            return None
+        return _str_to_float(self._st.get("target_temp"))
 
     @property
-    def hvac_mode(self) -> HVACMode:
-        return STATE_TO_MODE.get(self._st.get("hvac_mode"), HVACMode.OFF)
+    def hvac_mode(self) -> HVACMode | None:
+        return HVACMode.HEAT if self._st.get("hvac_mode") == "heat" else HVACMode.OFF
 
     @property
-    def hvac_action(self) -> HVACAction:
-        return STATE_TO_ACTION.get(self._st.get("hvac_action"), HVACAction.OFF)
-
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        self.async_write_ha_state()
-
-    async def async_update(self) -> None:
-        return
+    def hvac_action(self) -> HVACAction | None:
+        s = (self._st.get("hvac_action") or "").lower()
+        if s == "heating":
+            return HVACAction.HEATING
+        if s == "idle":
+            return HVACAction.IDLE
+        if s == "off":
+            return HVACAction.OFF
+        return None
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         temp = kwargs.get(ATTR_TEMPERATURE)
@@ -150,3 +151,111 @@ class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
 
     async def async_turn_off(self) -> None:
         await self.async_set_hvac_mode(HVACMode.OFF)
+
+# ---- T310 als "Climate-Display" (nur Anzeige) ----
+class T310ClimateDisplayEntity(CoordinatorEntity, ClimateEntity):
+    # Keine Steuerfunktionen; keine auswählbaren Modi
+    _attr_supported_features: Set[ClimateEntityFeature] = set()
+    _attr_hvac_modes: list[HVACMode] = []
+    _attr_precision = PRECISION_TENTHS
+    _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    _attr_min_temp = 0
+    _attr_max_temp = 0
+
+    def __init__(self, coordinator: KasaKe100Coordinator, device_id: str) -> None:
+        super().__init__(coordinator)
+        self._id = device_id
+        self._attr_unique_id = f"{device_id}_t310_display"
+
+    @property
+    def _st(self):
+        return (self.coordinator.data.get("devices") or {}).get(self._id) or {}
+
+    @property
+    def name(self) -> str:
+        return self._st.get("name") or f"Tapo T310 {self._id[-4:]}"
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, self._id)},
+            "manufacturer": MANUFACTURER,
+            "model": "Tapo T310",
+            "name": self.name,
+        }
+
+    # ---- humidity bridging ----
+    def _humidity_from_same_device(self) -> Optional[float]:
+        try:
+            er_reg = er.async_get(self.hass)
+            ent_entry = er_reg.async_get(self.entity_id)
+            if not ent_entry or not ent_entry.device_id:
+                return None
+            dev_id = ent_entry.device_id
+            for e in er_reg.entities.values():
+                if e.device_id != dev_id or e.domain != "sensor":
+                    continue
+                st = self.hass.states.get(e.entity_id)
+                if not st or st.state in (None, "", "unknown", "unavailable"):
+                    continue
+                if st.attributes.get("device_class") == "humidity":
+                    try:
+                        return float(st.state)
+                    except (TypeError, ValueError):
+                        continue
+            return None
+        except Exception:
+            return None
+
+    def _humidity_from_named_sensor(self) -> Optional[float]:
+        base = _slugify(self.name)
+        for ent_id in (f"sensor.{base}_luftfeuchtigkeit", f"sensor.{base}_luftfeuchte", f"sensor.{base}_humidity"):
+            st = self.hass.states.get(ent_id)
+            if st and st.state not in (None, "", "unknown", "unavailable"):
+                try:
+                    return float(st.state)
+                except (TypeError, ValueError):
+                    continue
+        return None
+
+    def _find_humidity_value(self) -> Optional[float]:
+        hum = self._st.get("humidity")
+        if hum is not None:
+            try:
+                return float(hum)
+            except (TypeError, ValueError):
+                pass
+        return self._humidity_from_same_device() or self._humidity_from_named_sensor()
+
+    # ---- climate interface (read-only) ----
+    @property
+    def current_temperature(self) -> float | None:
+        return _str_to_float(self._st.get("current_temp"))
+
+    @property
+    def target_temperature(self) -> float | None:
+        return None
+
+    @property
+    def hvac_mode(self) -> HVACMode | None:
+        # Report a stable state to avoid "unknown" while keeping selector hidden
+        return HVACMode.HEAT
+
+    @property
+    def hvac_action(self) -> Optional[HVACAction]:
+        # No action shown
+        return None
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        attrs: Dict[str, Any] = {}
+        hum = self._find_humidity_value()
+        if hum is not None:
+            attrs["humidity"] = hum
+        if "battery" in self._st:
+            attrs["battery"] = self._st.get("battery")
+        if "rssi" in self._st:
+            attrs["rssi"] = self._st.get("rssi")
+        if "signal" in self._st:
+            attrs["signal"] = self._st.get("signal")
+        return attrs

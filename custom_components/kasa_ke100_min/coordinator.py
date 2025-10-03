@@ -14,7 +14,7 @@ class KasaKe100Coordinator(DataUpdateCoordinator[Dict[str, Any]]):
         interval = timedelta(seconds=scan_interval_seconds) if scan_interval_seconds else DEFAULT_SCAN_INTERVAL
         super().__init__(
             hass,
-            logging.getLogger(__name__),  # valid logger object
+            logging.getLogger(__name__),
             name=f"{DOMAIN}_coordinator",
             update_interval=interval,
         )
