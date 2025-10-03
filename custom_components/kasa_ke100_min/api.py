@@ -107,7 +107,6 @@ class KasaKe100Client:
             if isinstance(value, str):
                 return value.strip().lower()
             s = str(v).lower()
-            # Beispiele: 'thermostatstate.heating' → 'heating'
             if "." in s:
                 s = s.split(".")[-1]
             return s
@@ -122,7 +121,6 @@ class KasaKe100Client:
                 return False
             if tok in ("on", "heat", "heating", "idle", "manual", "auto", "schedule", "comfort"):
                 return True
-        # Bool/int separat prüfen
         for val in candidates:
             if isinstance(val, (bool, int)):
                 return bool(val)
@@ -130,7 +128,6 @@ class KasaKe100Client:
 
     @staticmethod
     def _thermo_mode_to_hvac(mode_obj: Any) -> Optional[tuple[str,str]]:
-        """Mapped ThermostatState (Enum/String) → (hvac_mode, hvac_action)."""
         if mode_obj is None:
             return None
         def tok(v: Any) -> str:
@@ -153,7 +150,6 @@ class KasaKe100Client:
             return ("heat", "heating")
         if t == "idle":
             return ("heat", "idle")
-        # Unbekannt → None
         return None
 
     @staticmethod
@@ -179,24 +175,6 @@ class KasaKe100Client:
                 pass
         return None
 
-    def _debug_dump(self, dev_id: str, name: str, child: Any, thermo: Any, temp_mod: Any, device_mod: Any, cur: Any, tgt: Any, power_on: Any, heat_flag: Any, hvac_mode: str, hvac_action: str) -> None:
-        try:
-            def _s(o, fields):
-                out = {}
-                for f in fields:
-                    out[f] = getattr(o, f, None) if o is not None else None
-                return out
-            thermo_fields = ["current_temperature", "temperature", "target_temperature", "setpoint", "heating", "is_heating", "heating_active", "heat_on", "mode", "is_on", "power", "enabled", "active", "on"]
-            device_fields = ["mode", "is_on", "power", "enabled", "active", "on"]
-            child_fields  = ["mode", "is_on", "power", "enabled", "active", "on", "target_temperature", "setpoint", "target_temp"]
-            _LOGGER.debug(
-                "TRV DEBUG | id=%s name=%s | cur=%s tgt=%s | power_norm=%s | heat_flag=%s | hvac=(%s,%s) | thermo=%s | device=%s | child=%s",
-                dev_id, name, cur, tgt, power_on, heat_flag, hvac_mode, hvac_action,
-                _s(thermo, thermo_fields), _s(device_mod, device_fields), _s(child, child_fields)
-            )
-        except Exception as e:
-            _LOGGER.debug("TRV DEBUG logging failed for %s: %s", dev_id, e)
-
     # -------- Poll --------
 
     async def async_refresh(self) -> Dict[str, Dict[str, Any]]:
@@ -218,11 +196,6 @@ class KasaKe100Client:
                 name = getattr(child, "alias", None) or getattr(child, "name", None) or f"Device {dev_id}"
 
                 modules = getattr(child, "modules", {}) or {}
-                try:
-                    mod_keys = list(modules.keys()) if hasattr(modules, "keys") else str(type(modules))
-                    _LOGGER.debug("Child %s modules: %s", dev_id, mod_keys)
-                except Exception:
-                    pass
 
                 # Module
                 thermo = self._get_module(modules, getattr(self._Module, "Thermostat", None), "Thermostat")
@@ -258,16 +231,12 @@ class KasaKe100Client:
                     if hvac_from_mode is not None:
                         hvac_mode, hvac_action = hvac_from_mode
                     else:
-                        # Fallback konservativ
                         if power_on is False:
                             hvac_mode, hvac_action = ("off", "off")
                         elif heat_flag is True:
                             hvac_mode, hvac_action = ("heat", "heating")
                         else:
                             hvac_mode, hvac_action = ("heat", "idle")
-
-                    # Detail-Debug
-                    self._debug_dump(dev_id, name, child, thermo, temp_mod, device_mod, cur, tgt, power_on, heat_flag, hvac_mode, hvac_action)
 
                     battery = self._get_attr_any(child, ["battery"])
                     if battery is None and thermo is not None:
@@ -298,8 +267,6 @@ class KasaKe100Client:
                         online=True,
                     )
                     continue
-
-                _LOGGER.debug("Unknown child modules for %s: %s", dev_id, list(modules) if hasattr(modules, "keys") else modules)
 
             self._devices = devices
             out: Dict[str, Any] = {"devices": {}}
