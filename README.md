@@ -27,9 +27,15 @@
   - **Scan‑Intervall** (Sekunden) über Integrations‑Optionen einstellbar.
 
 ### 📦 Installation
-1. Ordner `custom_components/kasa_ke100_min/` in dein Home‑Assistant‑Config‑Verzeichnis kopieren.
-2. Home Assistant neu starten.
-3. **Einstellungen → Geräte & Dienste → Integration hinzufügen** → nach **„Kasa KE100 (min)“** suchen (Domain: `kasa_ke100_min`).
+
+#### Via [HACS](https://hacs.xyz/)
+1. Stellen Sie sicher, dass [HACS](https://hacs.xyz/) in Ihrem Home Assistant-Setup installiert ist.
+2. Gehen Sie zu **HACS > Integrationen**.
+3. Klicken Sie oben rechts auf die drei Punkte und wählen Sie **Benutzerdefinierte Repositorys**.
+4. Fügen Sie die Repository-URL hinzu: „https://github.com/MTTPoll/Kasa-KE-100-min“ und wählen Sie **Integration** als Kategorie.
+5. Suchen Sie in HACS nach **„Kasa KE100 (min)“** und installieren Sie die Integration.
+6. Starten Sie Home Assistant neu.
+7. Fügen Sie die Integration über die Home Assistant-Benutzeroberfläche hinzu.
 
 **Konfig-Felder**
 - **Host** (IP/Hostname des **KH100** Hubs)
@@ -64,7 +70,7 @@
 **Einfache 2‑Zeilen‑Karte**
 ```yaml
 type: custom:mushroom-template-card
-entity: climate.temp_heizung  # dein T310-Climate-Entity
+entity: climate.deine_Entität  # dein T310-Climate-Entity
 primary: >
   {{ state_attr(entity, 'friendly_name') or 'Tapo T310' }}
 secondary: >
@@ -81,7 +87,7 @@ tap_action:
 **Kompakt horizontal**
 ```yaml
 type: custom:mushroom-template-card
-entity: climate.temp_heizung
+entity: climate.deine_entität
 primary: >
   {{ state_attr(entity, 'current_temperature') | default('–') }} °C
 secondary: >
@@ -116,7 +122,7 @@ tap_action:
 - Minimaler, lokaler Ansatz – deckt **KE100/T310** + einfache Kontakte ab.
 
 ### 📄 Lizenz
-MIT (oder gewünschte Lizenz). © Contributors.
+MIT © Contributors.
 
 ---
 
@@ -143,9 +149,15 @@ MIT (oder gewünschte Lizenz). © Contributors.
   - **Scan interval** (seconds) via Integration Options.
 
 ### 📦 Installation
-1. Copy `custom_components/kasa_ke100_min/` into your Home Assistant config.
-2. Restart Home Assistant.
-3. **Settings → Devices & Services → Add Integration** → search **“Kasa KE100 (min)”** (domain: `kasa_ke100_min`).
+
+#### Via [HACS](https://hacs.xyz/)
+1. Ensure that [HACS](https://hacs.xyz/) is installed in your Home Assistant setup.
+2. Go to **HACS > Integrations**.
+3. Click the three dots in the top right and select **Custom Repositories**.
+4. Add the repository URL: "https://github.com/MTTPoll/Kasa-KE-100-min" and select **Integration** as the category.
+5. Search for **"Kasa KE100 (min)"** in HACS and install the integration.
+6. Restart Home Assistant.
+7. Add the integration via the Home Assistant interface.
 
 **Config fields**
 - **Host** (IP/hostname of the **KH100** hub)  
@@ -180,7 +192,7 @@ MIT (oder gewünschte Lizenz). © Contributors.
 **Simple two‑line card**
 ```yaml
 type: custom:mushroom-template-card
-entity: climate.temp_heizung  # your T310 climate entity
+entity: climate.your_entity  # your T310 climate entity
 primary: >
   {{ state_attr(entity, 'friendly_name') or 'Tapo T310' }}
 secondary: >
@@ -197,7 +209,7 @@ tap_action:
 **Compact horizontal variant**
 ```yaml
 type: custom:mushroom-template-card
-entity: climate.temp_heizung
+entity: climate.your_entity
 primary: >
   {{ state_attr(entity, 'current_temperature') | default('–') }} °C
 secondary: >
@@ -232,4 +244,4 @@ tap_action:
 - Minimal, local approach — covers **KE100/T310** + simple contact sensors.
 
 ### 📄 License
-MIT (or your preferred license). © Contributors.
+MIT © Contributors.
