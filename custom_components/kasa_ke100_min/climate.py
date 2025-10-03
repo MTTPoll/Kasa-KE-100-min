@@ -1,11 +1,14 @@
 from __future__ import annotations
 from typing import Any
+import logging
 from homeassistant.components.climate import ClimateEntity, ClimateEntityFeature, HVACMode, HVACAction
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature, PRECISION_TENTHS
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.core import callback
 from .const import DOMAIN, MANUFACTURER, MODEL_KE100
 from .coordinator import KasaKe100Coordinator
+
+_LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 0
 
@@ -29,7 +32,6 @@ async def async_setup_entry(hass, entry, async_add_entities):
     def _check_devices():
         ents = []
         for dev_id, raw in coordinator.data.get("devices", {}).items():
-            # TRVs erkennen am Vorhandensein von target_temp
             if dev_id in known or "target_temp" not in raw:
                 continue
             ents.append(Ke100ClimateEntity(coordinator, dev_id))
@@ -51,7 +53,6 @@ class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_hvac_mode = HVACMode.OFF
     _attr_hvac_action = HVACAction.OFF
-    # feste Begrenzungen wie in offizieller TP-Link-Integration
     _attr_min_temp = 5
     _attr_max_temp = 30
 
@@ -90,6 +91,23 @@ class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
         hvac_mode = st.get("hvac_mode", "off")
         self._attr_hvac_action = STATE_TO_ACTION.get(hvac_action, HVACAction.OFF)
         self._attr_hvac_mode = STATE_TO_MODE.get(hvac_mode, HVACMode.OFF)
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        prev = getattr(self, "_attr_current_temperature", None)
+        self._async_update_attrs()
+        # INFO-Level, damit es ohne logger-config sichtbar ist
+        _LOGGER.info(
+            "Ke100ClimateEntity update | %s | %s: current %s -> %s, target=%s, hvac=%s/%s",
+            self.entity_id or self._attr_unique_id,
+            self.name,
+            prev,
+            getattr(self, "_attr_current_temperature", None),
+            getattr(self, "_attr_target_temperature", None),
+            getattr(self, "_attr_hvac_mode", None),
+            getattr(self, "_attr_hvac_action", None),
+        )
+        super()._handle_coordinator_update()
 
     async def async_update(self) -> None:
         return
