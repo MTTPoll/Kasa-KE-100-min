@@ -1,9 +1,18 @@
 {
   "domain": "kasa_ke100_min",
-  "name": "Kasa KE100 Minimal",
-  "version": "0.3.0",
-  "documentation": "https://github.com/deinaccount/homeassistant-kasa-ke100-min",
-  "dependencies": [],
-  "codeowners": ["@deinaccount"],
-  "requirements": []
+  "name": "Kasa KE100 Minimal (Debug)",
+  "version": "0.2.4",
+  "config_flow": true,
+  "documentation": "https://github.com/your-account/homeassistant-kasa-ke100-min",
+  "issue_tracker": "https://github.com/your-account/homeassistant-kasa-ke100-min/issues",
+  "requirements": [
+    "python-kasa>=0.6.3"
+  ],
+  "codeowners": [
+    "@your-account"
+  ],
+  "iot_class": "local_polling",
+  "loggers": [
+    "custom_components.kasa_ke100_min"
+  ]
 }
