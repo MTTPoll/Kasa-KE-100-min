@@ -80,18 +80,43 @@ class KasaKe100Client:
         return hex(id(dev))
 
     @staticmethod
-    def _derive_hvac_action(thermo) -> str:
-        heating = getattr(thermo, "heating", None)
-        if isinstance(heating, bool):
-            return "heating" if heating else "idle"
-        cur = getattr(thermo, "current_temperature", None)
-        tgt = getattr(thermo, "target_temperature", None)
+    def _derive_hvac_action(cur: float | None, tgt: float | None, explicit_heating: Optional[bool] = None) -> str:
+        if isinstance(explicit_heating, bool):
+            return "heating" if explicit_heating else "idle"
         if cur is None or tgt is None:
             return "idle"
         try:
             return "heating" if float(cur) < float(tgt) else "idle"
         except Exception:
             return "idle"
+
+    @staticmethod
+    def _get_module(modules: Any, key: Any, alt_key: Optional[str] = None):
+        """Robuster Zugriff: Module können per Enum-Schlüssel oder per String benannt sein."""
+        if not modules:
+            return None
+        # Dict-artig?
+        if hasattr(modules, "get"):
+            # 1) direkter key (Enum)
+            mod = modules.get(key)
+            if mod is not None:
+                return mod
+            # 2) alternativer String-Name
+            if alt_key is not None:
+                mod = modules.get(alt_key)
+                if mod is not None:
+                    return mod
+            # 3) string keys (fallback): vergleiche Name-case-insensitiv
+            try:
+                for k, v in modules.items():
+                    ks = str(k).lower()
+                    if alt_key and ks == alt_key.lower():
+                        return v
+                    if hasattr(key, "name") and ks == str(key.name).lower():
+                        return v
+            except Exception:
+                pass
+        return None
 
     # -------- Poll --------
 
@@ -114,13 +139,52 @@ class KasaKe100Client:
                 name = getattr(child, "alias", None) or getattr(child, "name", None) or f"Device {dev_id}"
 
                 modules = getattr(child, "modules", {}) or {}
-                # Thermostat / TRV
-                thermo = modules.get(self._Module.Thermostat) if isinstance(modules, dict) else None
-                if thermo is not None:
-                    cur = getattr(thermo, "current_temperature", None)
-                    tgt = getattr(thermo, "target_temperature", None)
-                    hvac_action = self._derive_hvac_action(thermo)
-                    battery = getattr(child, "battery", None) or getattr(thermo, "battery", None)
+                # Debug: zeige Modulnamen (einmalig pro Gerät)
+                try:
+                    mod_keys = list(modules.keys()) if hasattr(modules, "keys") else str(type(modules))
+                    _LOGGER.debug("Child %s modules: %s", dev_id, mod_keys)
+                except Exception:
+                    pass
+
+                # 1) Thermostat / TRV (Enum oder String)
+                thermo = self._get_module(modules, getattr(self._Module, "Thermostat", None), "Thermostat")
+                # 2) TemperatureSensor als Fallback für current_temp
+                temp_mod = self._get_module(modules, getattr(self._Module, "TemperatureSensor", None), "TemperatureSensor")
+                # 3) ContactSensor
+                contact = self._get_module(modules, getattr(self._Module, "ContactSensor", None), "ContactSensor")
+
+                if thermo is not None or temp_mod is not None:
+                    # Current Temperature
+                    cur = None
+                    if thermo is not None:
+                        cur = getattr(thermo, "current_temperature", None)
+                        if cur is None:
+                            cur = getattr(thermo, "temperature", None)
+                    if cur is None and temp_mod is not None:
+                        cur = getattr(temp_mod, "current_temperature", None) or getattr(temp_mod, "temperature", None)
+
+                    # Target Temperature
+                    tgt = None
+                    if thermo is not None:
+                        tgt = getattr(thermo, "target_temperature", None) or getattr(thermo, "setpoint", None)
+                    if tgt is None:
+                        # Manche Firmwares exposen das Setpoint am Child selbst
+                        for attr in ("target_temperature", "setpoint", "target_temp"):
+                            tgt = getattr(child, attr, None)
+                            if tgt is not None:
+                                break
+
+                    # HVAC Action
+                    explicit_heating = getattr(thermo, "heating", None) if thermo is not None else None
+                    hvac_action = self._derive_hvac_action(cur, tgt, explicit_heating)
+
+                    # Battery (best effort)
+                    battery = getattr(child, "battery", None)
+                    if battery is None and thermo is not None:
+                        battery = getattr(thermo, "battery", None)
+                    if battery is None and temp_mod is not None:
+                        battery = getattr(temp_mod, "battery", None)
+
                     devices[dev_id] = TRVState(
                         device_id=dev_id,
                         name=name,
@@ -132,9 +196,6 @@ class KasaKe100Client:
                     )
                     continue
 
-                # Contact Sensor (T110)
-                contact_cls = getattr(self._Module, "ContactSensor", None)
-                contact = modules.get(contact_cls) if isinstance(modules, dict) and contact_cls else None
                 if contact is not None:
                     is_open = bool(getattr(contact, "is_open", False))
                     battery = getattr(child, "battery", None) or getattr(contact, "battery", None)
@@ -147,7 +208,8 @@ class KasaKe100Client:
                     )
                     continue
 
-                _LOGGER.debug("Unknown child modules for %s: %s", dev_id, list(modules) if isinstance(modules, dict) else modules)
+                # Unbekannt – loggen
+                _LOGGER.debug("Unknown child modules for %s: %s", dev_id, list(modules) if hasattr(modules, "keys") else modules)
 
             self._devices = devices
             out: Dict[str, Any] = {"devices": {}}
@@ -171,27 +233,19 @@ class KasaKe100Client:
             child = self._get_child(device_id)
             if child is None:
                 raise ValueError(f"Device {device_id} not found")
-            modules = getattr(child, "modules", {}) or {}
-            thermo = modules.get(self._Module.Thermostat) if isinstance(modules, dict) else None
-            if thermo is None:
-                raise ValueError(f"Device {device_id} is not a TRV")
-            setter = getattr(thermo, "set_target_temperature", None) or getattr(thermo, "set_temperature", None)
-            if setter is None:
-                raise RuntimeError("Thermostat module has no setter for target temperature")
-            await setter(float(temperature))
 
-    async def async_set_state(self, device_id: str, on: bool) -> None:
-        async with self._lock:
-            child = self._get_child(device_id)
-            if child is None:
-                raise ValueError(f"Device {device_id} not found")
             modules = getattr(child, "modules", {}) or {}
-            thermo = modules.get(self._Module.Thermostat) if isinstance(modules, dict) else None
-            if thermo is None:
-                raise ValueError(f"Device {device_id} is not a TRV")
-            if hasattr(thermo, "set_power"):
-                await thermo.set_power(on)
-            elif hasattr(thermo, "set_mode"):
-                await thermo.set_mode("heat" if on else "off")
-            else:
-                raise RuntimeError("Thermostat module has no power/mode setter; implement device-specific handling")
+            thermo = self._get_module(modules, getattr(self._Module, "Thermostat", None), "Thermostat")
+
+            if thermo is not None:
+                setter = getattr(thermo, "set_target_temperature", None) or getattr(thermo, "set_temperature", None)
+                if setter is None:
+                    raise RuntimeError("Thermostat module has no setter for target temperature")
+                await setter(float(temperature))
+                return
+
+            # Fallback: falls kein Thermostat-Modul existiert, versuche generisch
+            if hasattr(child, "set_target_temperature"):
+                await child.set_target_temperature(float(temperature))
+                return
+            raise RuntimeError("No way to set target temperature on this device")
