@@ -92,39 +92,69 @@ class KasaKe100Client:
     @staticmethod
     def _norm_power(*candidates: Any) -> Optional[bool]:
         """Normalisiert Power/Modus-Infos aus mehreren Quellen.
-        - Modus-Strings 'off' → False
-        - Strings 'off/false/0/disabled/standby' → False
-        - Strings 'on/heat/heating/manual/auto/schedule' → True
-        - Bool/Int → bool
-        - Nichts verwertbares → None
+        Akzeptiert auch Enum-ähnliche Objekte mit .name/.value und str().
         """
+        def _to_token(v: Any) -> Optional[str]:
+            if v is None:
+                return None
+            if isinstance(v, str):
+                return v.strip().lower()
+            # Enum-artig?
+            name = getattr(v, "name", None)
+            if isinstance(name, str):
+                return name.strip().lower()
+            value = getattr(v, "value", None)
+            if isinstance(value, str):
+                return value.strip().lower()
+            s = str(v).lower()
+            # Beispiele: 'thermostatstate.heating' → 'heating'
+            if "." in s:
+                s = s.split(".")[-1]
+            return s
+
         for val in candidates:
             if val is None:
                 continue
-            # mode/power strings
-            if isinstance(val, str):
-                s = val.strip().lower()
-                if s in ("off", "false", "0", "disabled", "standby"):
-                    return False
-                if s in ("on", "heat", "heating", "manual", "auto", "schedule", "comfort"):
-                    return True
+            tok = _to_token(val)
+            if tok is None:
                 continue
+            if tok in ("off", "false", "0", "disabled", "standby"):
+                return False
+            if tok in ("on", "heat", "heating", "idle", "manual", "auto", "schedule", "comfort"):
+                return True
+        # Bool/int separat prüfen
+        for val in candidates:
             if isinstance(val, (bool, int)):
                 return bool(val)
         return None
 
     @staticmethod
-    def _derive_actions(cur: float | None, tgt: float | None, explicit_heating: Optional[bool], power_on: Optional[bool]) -> tuple[str,str]:
-        """Ermittelt (hvac_mode, hvac_action) ohne Fenster-Logik."""
-        if power_on is False:
+    def _thermo_mode_to_hvac(mode_obj: Any) -> Optional[tuple[str,str]]:
+        """Mapped ThermostatState (Enum/String) → (hvac_mode, hvac_action)."""
+        if mode_obj is None:
+            return None
+        def tok(v: Any) -> str:
+            if isinstance(v, str):
+                s = v
+            elif hasattr(v, "value") and isinstance(getattr(v, "value"), str):
+                s = v.value
+            elif hasattr(v, "name") and isinstance(getattr(v, "name"), str):
+                s = v.name
+            else:
+                s = str(v)
+            s = s.lower()
+            if "." in s:
+                s = s.split(".")[-1]
+            return s
+        t = tok(mode_obj)
+        if t == "off":
             return ("off", "off")
-        if explicit_heating is True:
+        if t == "heating":
             return ("heat", "heating")
-        if explicit_heating is False:
+        if t == "idle":
             return ("heat", "idle")
-        if power_on is True:
-            return ("heat", "idle")
-        return ("heat", "idle")
+        # Unbekannt → None
+        return None
 
     @staticmethod
     def _get_module(modules: Any, key: Any, alt_key: Optional[str] = None):
@@ -149,8 +179,7 @@ class KasaKe100Client:
                 pass
         return None
 
-    def _debug_dump(self, dev_id: str, name: str, child: Any, thermo: Any, temp_mod: Any, device_mod: Any, cur: Any, tgt: Any, power_on: Any, explicit_heating: Any, hvac_mode: str, hvac_action: str) -> None:
-        """Detailliertes Debug-Logging für ein TRV."""
+    def _debug_dump(self, dev_id: str, name: str, child: Any, thermo: Any, temp_mod: Any, device_mod: Any, cur: Any, tgt: Any, power_on: Any, heat_flag: Any, hvac_mode: str, hvac_action: str) -> None:
         try:
             def _s(o, fields):
                 out = {}
@@ -162,7 +191,7 @@ class KasaKe100Client:
             child_fields  = ["mode", "is_on", "power", "enabled", "active", "on", "target_temperature", "setpoint", "target_temp"]
             _LOGGER.debug(
                 "TRV DEBUG | id=%s name=%s | cur=%s tgt=%s | power_norm=%s | heat_flag=%s | hvac=(%s,%s) | thermo=%s | device=%s | child=%s",
-                dev_id, name, cur, tgt, power_on, explicit_heating, hvac_mode, hvac_action,
+                dev_id, name, cur, tgt, power_on, heat_flag, hvac_mode, hvac_action,
                 _s(thermo, thermo_fields), _s(device_mod, device_fields), _s(child, child_fields)
             )
         except Exception as e:
@@ -212,21 +241,33 @@ class KasaKe100Client:
                     if tgt is None:
                         tgt = self._get_attr_any(child, ["target_temperature", "setpoint", "target_temp"])
 
-                    # Power / Mode / explicit heating (ohne Fensterlogik)
+                    # 1) Direkte Auswertung des Thermostat-State (Enum/String)
+                    mode_obj = self._get_attr_any(thermo, ["mode"])
+                    hvac_from_mode = self._thermo_mode_to_hvac(mode_obj)
+
+                    # 2) Power/Heiz-Flags (Fallbacks)
                     power_on = self._norm_power(
+                        mode_obj,
                         self._get_attr_any(thermo, ["is_on", "power", "enabled", "active", "on"]),
-                        self._get_attr_any(thermo, ["mode"]),
                         self._get_attr_any(device_mod, ["is_on", "power", "enabled", "active", "on"]),
                         self._get_attr_any(device_mod, ["mode"]),
                         self._get_attr_any(child, ["is_on", "power", "enabled", "active", "on", "mode"]),
                     )
+                    heat_flag = self._get_attr_any(thermo, ["heating", "is_heating", "heating_active", "heat_on"])
 
-                    explicit_heating = self._get_attr_any(thermo, ["heating", "is_heating", "heating_active", "heat_on"])
-
-                    hvac_mode, hvac_action = self._derive_actions(cur, tgt, explicit_heating, power_on)
+                    if hvac_from_mode is not None:
+                        hvac_mode, hvac_action = hvac_from_mode
+                    else:
+                        # Fallback konservativ
+                        if power_on is False:
+                            hvac_mode, hvac_action = ("off", "off")
+                        elif heat_flag is True:
+                            hvac_mode, hvac_action = ("heat", "heating")
+                        else:
+                            hvac_mode, hvac_action = ("heat", "idle")
 
                     # Detail-Debug
-                    self._debug_dump(dev_id, name, child, thermo, temp_mod, device_mod, cur, tgt, power_on, explicit_heating, hvac_mode, hvac_action)
+                    self._debug_dump(dev_id, name, child, thermo, temp_mod, device_mod, cur, tgt, power_on, heat_flag, hvac_mode, hvac_action)
 
                     battery = self._get_attr_any(child, ["battery"])
                     if battery is None and thermo is not None:
