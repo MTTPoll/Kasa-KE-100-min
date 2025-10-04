@@ -79,11 +79,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 # ---- KE100 TRV (steuerbar) ----
 class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
-    _attr_supported_features: Set[ClimateEntityFeature] = {
-        ClimateEntityFeature.TARGET_TEMPERATURE,
-        ClimateEntityFeature.TURN_ON,
-        ClimateEntityFeature.TURN_OFF,
-    }
+    _attr_supported_features: int = (ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF)
     _attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
     _attr_precision = PRECISION_TENTHS
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
@@ -155,7 +151,7 @@ class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
 # ---- T310 als "Climate-Display" (nur Anzeige) ----
 class T310ClimateDisplayEntity(CoordinatorEntity, ClimateEntity):
     # Keine Steuerfunktionen; keine auswählbaren Modi
-    _attr_supported_features: Set[ClimateEntityFeature] = set()
+    _attr_supported_features: int = 0
     _attr_hvac_modes: list[HVACMode] = []
     _attr_precision = PRECISION_TENTHS
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
