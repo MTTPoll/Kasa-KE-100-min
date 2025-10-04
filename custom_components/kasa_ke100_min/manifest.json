@@ -3,16 +3,10 @@
   "name": "Kasa KE100 Minimal",
   "version": "0.2.5",
   "config_flow": true,
-  "documentation": "https://github.com/your-account/homeassistant-kasa-ke100-min",
-  "issue_tracker": "https://github.com/your-account/homeassistant-kasa-ke100-min/issues",
-  "requirements": [
-    "python-kasa>=0.6.3"
-  ],
-  "codeowners": [
-    "@MTTPoll"
-  ],
+  "documentation": "https://github.com/MTTPoll/homeassistant-kasa-ke100-min",
+  "issue_tracker": "https://github.com/MTTPoll/homeassistant-kasa-ke100-min/issues",
+  "requirements": ["python-kasa>=0.6.3"],
+  "codeowners": ["@MTTPoll"],
   "iot_class": "local_polling",
-  "loggers": [
-    "custom_components.kasa_ke100_min"
-  ]
+  "loggers": ["custom_components.kasa_ke100_min"]
 }
