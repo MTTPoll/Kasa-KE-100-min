@@ -9,7 +9,11 @@
 ### ✨ Funktionen
 - **KE100 Thermostatventil (TRV)**
   - Als **`climate`**-Entität mit `heat`/`off`, **Solltemperatur**, **turn_on/turn_off**, **Ist-Temperatur**, HVAC-Action.
-  - Genauigkeit **0,1 °C**, Bereich **5…30 °C**.
+  - **Ist-Temperatur** in 0,1 °C Schritten.  
+  - **Soll-Temperatur** nur in 1 °C Schritten (5…30 °C).  
+    👉 Hinweis: Die Solltemperatur wird absichtlich nur in **Ganzzahl-Schritten** gesetzt.  
+    Dies entspricht der offiziellen Kasa-App und stellt sicher, dass der Hub nur gültige Werte bekommt.  
+    So werden Probleme durch **halbe Gradwerte** (z. B. 20,5 °C) vermieden, die der KH100 nicht zuverlässig verarbeiten kann.
 - **Tapo T310 / T315 (Temp/Feuchte)**
   - **Read‑only `climate`** für schöne **Climate‑Karten**, **ohne** Stellfunktionen.
   - **Keine Modus-Auswahl**; intern wird ein stabiler `hvac_mode=heat` gesetzt, damit die Entität **nicht „unknown“** ist.  
@@ -131,7 +135,11 @@ MIT © Contributors.
 ### ✨ Features
 - **KE100 Thermostatic Radiator Valve (TRV)**
   - Exposes a **`climate`** entity with `heat`/`off`, **target temperature**, **turn_on/turn_off**, **current temperature**, HVAC action.
-  - Precision **0.1 °C**, range **5…30 °C**.
+  - **Current temperature** reported with 0.1 °C resolution.  
+  - **Target temperature** limited to 1 °C steps (5…30 °C).  
+    👉 Note: Target temperature is intentionally restricted to **integer steps**.  
+    This matches the official Kasa app and ensures the hub only receives valid values.  
+    This prevents issues with **half-degree values** (e.g. 20.5 °C), which the KH100 cannot reliably process.
 - **Tapo T310 / T315 (Temp/Humidity)**
   - **Read‑only `climate`** for nice **climate cards**, **no** controls.
   - **No mode selection**; internally reports a stable `hvac_mode=heat` so the entity **never becomes `unknown`**.  
