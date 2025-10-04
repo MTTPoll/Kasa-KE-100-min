@@ -6,6 +6,12 @@ import logging
 
 _LOGGER = logging.getLogger(__name__)
 
+
+def _import_kasa():
+    # Import in thread executor to avoid blocking the HA event loop
+    from kasa import Discover, Module  # type: ignore
+    return Discover, Module
+
 @dataclass
 class TRVState:
     device_id: str
@@ -42,7 +48,8 @@ class KasaKe100Client:
             if self._connected and self._hub is not None:
                 return
             try:
-                from kasa import Discover, Module  # type: ignore
+                loop = asyncio.get_running_loop()
+                Discover, Module = await loop.run_in_executor(None, _import_kasa)
             except Exception as e:
                 raise RuntimeError("python-kasa ist nicht installiert oder fehlerhaft.") from e
             self._Module = Module
