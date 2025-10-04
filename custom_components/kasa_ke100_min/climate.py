@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Dict, Set, Optional, List
+from typing import Any, Dict, Optional, List, Set
 import re
 from homeassistant.components.climate import ClimateEntity, ClimateEntityFeature, HVACMode, HVACAction
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature, PRECISION_WHOLE
@@ -56,7 +56,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     known: set[str] = set()
 
     def _check_devices():
-        ents = []
+        ents: List[ClimateEntity] = []
         devices = (coordinator.data.get("devices") or {})
         for dev_id, raw in devices.items():
             if dev_id in known:
@@ -78,11 +78,12 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 # ---- KE100 TRV (steuerbar) ----
 class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
-    _attr_supported_features: int = (
-        ClimateEntityFeature.TARGET_TEMPERATURE
-        | ClimateEntityFeature.TURN_ON
-        | ClimateEntityFeature.TURN_OFF
-    )
+    # WICHTIG: als set statt Bitmaske
+    _attr_supported_features: Set[ClimateEntityFeature] = {
+        ClimateEntityFeature.TARGET_TEMPERATURE,
+        ClimateEntityFeature.TURN_ON,
+        ClimateEntityFeature.TURN_OFF,
+    }
     _attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
     _attr_precision = PRECISION_WHOLE
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
@@ -158,7 +159,7 @@ class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
 
 # ---- T310 als "Climate-Display" (nur Anzeige) ----
 class T310ClimateDisplayEntity(CoordinatorEntity, ClimateEntity):
-    _attr_supported_features: int = 0
+    _attr_supported_features: Set[ClimateEntityFeature] = set()
     _attr_hvac_modes: list[HVACMode] = []
     _attr_precision = PRECISION_WHOLE
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
