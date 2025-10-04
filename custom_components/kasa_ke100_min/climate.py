@@ -1,9 +1,8 @@
-
 from __future__ import annotations
 from typing import Any, Dict, Set, Optional, List
 import re
 from homeassistant.components.climate import ClimateEntity, ClimateEntityFeature, HVACMode, HVACAction
-from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature, PRECISION_TENTHS
+from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature, PRECISION_WHOLE
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers import entity_registry as er
 from .const import DOMAIN, MANUFACTURER, MODEL_KE100
@@ -79,12 +78,21 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 # ---- KE100 TRV (steuerbar) ----
 class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
-    _attr_supported_features: int = (ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF)
+    _attr_supported_features: int = (
+        ClimateEntityFeature.TARGET_TEMPERATURE
+        | ClimateEntityFeature.TURN_ON
+        | ClimateEntityFeature.TURN_OFF
+    )
     _attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
-    _attr_precision = PRECISION_TENTHS
+    _attr_precision = PRECISION_WHOLE
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_min_temp = 5
     _attr_max_temp = 30
+
+    @property
+    def target_temperature_step(self) -> float:
+        """Nur ganze Grad erlauben."""
+        return 1.0
 
     def __init__(self, coordinator: KasaKe100Coordinator, device_id: str) -> None:
         super().__init__(coordinator)
@@ -150,10 +158,9 @@ class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
 
 # ---- T310 als "Climate-Display" (nur Anzeige) ----
 class T310ClimateDisplayEntity(CoordinatorEntity, ClimateEntity):
-    # Keine Steuerfunktionen; keine auswählbaren Modi
     _attr_supported_features: int = 0
     _attr_hvac_modes: list[HVACMode] = []
-    _attr_precision = PRECISION_TENTHS
+    _attr_precision = PRECISION_WHOLE
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_min_temp = 0
     _attr_max_temp = 0
@@ -234,12 +241,10 @@ class T310ClimateDisplayEntity(CoordinatorEntity, ClimateEntity):
 
     @property
     def hvac_mode(self) -> HVACMode | None:
-        # Report a stable state to avoid "unknown" while keeping selector hidden
         return HVACMode.HEAT
 
     @property
     def hvac_action(self) -> Optional[HVACAction]:
-        # No action shown
         return None
 
     @property
