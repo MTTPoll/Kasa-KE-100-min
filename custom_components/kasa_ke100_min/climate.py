@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, Set, Optional, List
 import re
 from homeassistant.components.climate import ClimateEntity, ClimateEntityFeature, HVACMode, HVACAction
-from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature, PRECISION_TENTHS
+from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature, PRECISION_TENTHS, PRECISION_WHOLE
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers import entity_registry as er
 from .const import DOMAIN, MANUFACTURER, MODEL_KE100
@@ -81,7 +81,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
 class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
     _attr_supported_features: int = (ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF)
     _attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
-    _attr_precision = PRECISION_TENTHS
+    _attr_precision = PRECISION_TENTHS   # <<<<<< geändert
+    _attr_target_temperature_step = 1.0
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_min_temp = 5
     _attr_max_temp = 30
@@ -135,8 +136,14 @@ class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
         temp = kwargs.get(ATTR_TEMPERATURE)
         if temp is None:
             return
-        await self.coordinator.client.async_set_target_temp(self._id, float(temp))
-        await self.coordinator.async_request_refresh()
+
+        # Nur ganze Zahlen zulassen
+        if isinstance(temp, (int, float)) and float(temp).is_integer():
+            await self.coordinator.client.async_set_target_temp(self._id, int(temp))
+            await self.coordinator.async_request_refresh()
+        else:
+            # ignorieren, falls jemand z. B. 21.5 versucht
+            return
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         await self.coordinator.client.async_set_state(self._id, hvac_mode != HVACMode.OFF)
@@ -148,10 +155,11 @@ class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
     async def async_turn_off(self) -> None:
         await self.async_set_hvac_mode(HVACMode.OFF)
 
+
 # ---- T310 als "Climate-Display" (nur Anzeige) ----
 class T310ClimateDisplayEntity(CoordinatorEntity, ClimateEntity):
     # Keine Steuerfunktionen; keine auswählbaren Modi
-    _attr_supported_features: int = 0
+    _attr_supported_features = ClimateEntityFeature(0)
     _attr_hvac_modes: list[HVACMode] = []
     _attr_precision = PRECISION_TENTHS
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
