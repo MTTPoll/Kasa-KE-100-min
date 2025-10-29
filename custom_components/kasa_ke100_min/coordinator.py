@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 from datetime import timedelta
 from typing import Any, Dict, Optional
@@ -7,6 +6,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from .const import DOMAIN, DEFAULT_SCAN_INTERVAL
 from .api import KasaKe100Client
+
 
 class KasaKe100Coordinator(DataUpdateCoordinator[Dict[str, Any]]):
     def __init__(self, hass: HomeAssistant, client: KasaKe100Client, scan_interval_seconds: Optional[int] = None) -> None:
@@ -24,3 +24,8 @@ class KasaKe100Coordinator(DataUpdateCoordinator[Dict[str, Any]]):
             return await self.client.async_refresh()
         except Exception as err:
             raise UpdateFailed(err) from err
+
+    # Wrapper: KE100 Schedule an/aus + Refresh
+    async def async_set_schedule_enabled(self, device_id: str, enabled: bool) -> None:
+        await self.client.async_set_schedule_enabled(device_id, enabled)
+        await self.async_request_refresh()

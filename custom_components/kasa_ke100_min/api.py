@@ -8,7 +8,6 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def _import_kasa():
-    # Import in thread executor to avoid blocking the HA event loop
     from kasa import Discover, Module  # type: ignore
     return Discover, Module
 
@@ -21,6 +20,8 @@ class TRVState:
     hvac_mode: str           # "heat" | "off"
     hvac_action: str         # "heating" | "idle" | "off"
     battery: int | None
+    schedule_enabled: bool | None = None
+    preset_mode: str | None = None  # "schedule" | "manual"
     online: bool = True
 
 @dataclass
@@ -47,13 +48,9 @@ class KasaKe100Client:
         async with self._lock:
             if self._connected and self._hub is not None:
                 return
-            try:
-                loop = asyncio.get_running_loop()
-                Discover, Module = await loop.run_in_executor(None, _import_kasa)
-            except Exception as e:
-                raise RuntimeError("python-kasa ist nicht installiert oder fehlerhaft.") from e
+            loop = asyncio.get_running_loop()
+            Discover, Module = await loop.run_in_executor(None, _import_kasa)
             self._Module = Module
-
             self._hub = await Discover.discover_single(
                 self._host,
                 username=self._username,
@@ -62,7 +59,6 @@ class KasaKe100Client:
             if self._hub is None:
                 raise RuntimeError(f"Cannot discover KH100 hub at {self._host}")
             self._connected = True
-            _LOGGER.debug("Connected to KH100 hub at %s", self._host)
 
     async def async_close(self) -> None:
         async with self._lock:
@@ -170,6 +166,7 @@ class KasaKe100Client:
         async with self._lock:
             await self._hub.update()
 
+            old_devices = self._devices  # sichern für Carry-Over
             devices: Dict[str, TRVState | ContactState] = {}
             self._child_by_id.clear()
 
@@ -227,6 +224,30 @@ class KasaKe100Client:
                     if battery is None and temp_mod is not None:
                         battery = self._get_attr_any(temp_mod, ["battery"])
 
+                    # schedule/preset detection (best effort)
+                    schedule_enabled: bool | None = None
+                    preset_str: str | None = None
+                    se = self._get_attr_any(thermo, ["schedule_enabled", "is_schedule_enabled", "auto_mode", "is_auto"])
+                    if isinstance(se, bool):
+                        schedule_enabled = se
+                    pm = self._get_attr_any(thermo, ["preset_mode", "schedule_mode", "mode"]) or ""
+                    if isinstance(pm, str) and pm:
+                        pml = pm.lower()
+                        if pml in ("auto", "schedule"):
+                            schedule_enabled = True
+                            preset_str = "schedule"
+                        elif pml in ("manual", "manu", "heat"):
+                            schedule_enabled = False
+                            preset_str = "manual"
+
+                    # carry-over aus altem Zustand, wenn Gerät nichts liefert
+                    old = old_devices.get(dev_id)
+                    if isinstance(old, TRVState):
+                        if schedule_enabled is None and isinstance(old.schedule_enabled, bool):
+                            schedule_enabled = old.schedule_enabled
+                        if preset_str is None and isinstance(old.preset_mode, str):
+                            preset_str = old.preset_mode
+
                     devices[dev_id] = TRVState(
                         device_id=dev_id,
                         name=name,
@@ -235,6 +256,8 @@ class KasaKe100Client:
                         hvac_mode=hvac_mode,
                         hvac_action=hvac_action,
                         battery=battery,
+                        schedule_enabled=schedule_enabled,
+                        preset_mode=preset_str,
                         online=True,
                     )
                     continue
@@ -298,3 +321,45 @@ class KasaKe100Client:
                 await child.set_on(bool(on))
                 return
             raise RuntimeError("No way to switch device on/off")
+
+    async def async_set_schedule_enabled(self, device_id: str, enabled: bool) -> None:
+        """Try to toggle schedule; if API not available, fall back to optimistic in-memory flag."""
+        async with self._lock:
+            child = self._get_child(device_id)
+            if child is None:
+                raise ValueError(f"Device {device_id} not found")
+
+            modules = getattr(child, "modules", {}) or {}
+            thermo = self._get_module(modules, getattr(self._Module, "Thermostat", None), "Thermostat")
+            device_mod = self._get_module(modules, getattr(self._Module, "DeviceModule", None), "DeviceModule")
+
+            if thermo is not None:
+                bool_setter = getattr(thermo, "set_schedule_enabled", None)
+                if callable(bool_setter):
+                    await bool_setter(bool(enabled))
+                    return
+                mode_setter = (
+                    getattr(thermo, "set_schedule_mode", None)
+                    or getattr(thermo, "set_preset_mode", None)
+                    or getattr(thermo, "set_mode", None)
+                )
+                if callable(mode_setter):
+                    await mode_setter("auto" if enabled else "manual")
+                    return
+
+            if device_mod is not None:
+                bool_setter = getattr(device_mod, "set_schedule_enabled", None)
+                if callable(bool_setter):
+                    await bool_setter(bool(enabled))
+                    return
+                mode_setter = getattr(device_mod, "set_schedule_mode", None)
+                if callable(mode_setter):
+                    await mode_setter("auto" if enabled else "manual")
+                    return
+
+            # Optimistic fallback: update cached state so HA can react
+            dev = self._devices.get(device_id)
+            if isinstance(dev, TRVState):
+                dev.schedule_enabled = bool(enabled)
+                dev.preset_mode = "schedule" if enabled else "manual"
+            return

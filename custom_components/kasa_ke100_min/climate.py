@@ -1,15 +1,19 @@
-
 from __future__ import annotations
-from typing import Any, Dict, Set, Optional, List
+from typing import Any, Dict, Optional, List
 import re
 from homeassistant.components.climate import ClimateEntity, ClimateEntityFeature, HVACMode, HVACAction
-from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature, PRECISION_TENTHS, PRECISION_WHOLE
+from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature, PRECISION_TENTHS
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers import entity_registry as er
+from homeassistant.exceptions import HomeAssistantError
 from .const import DOMAIN, MANUFACTURER, MODEL_KE100
 from .coordinator import KasaKe100Coordinator
 
 PARALLEL_UPDATES = 0
+
+# Lokales Dashboard-Icon (wird aus /config/www/... als /local/... ausgeliefert)
+ICON_URL = "/local/kasa_ke100_min/icon.png"
+
 
 def _str_to_float(x):
     try:
@@ -17,11 +21,13 @@ def _str_to_float(x):
     except (TypeError, ValueError):
         return None
 
+
 def _slugify(name: str) -> str:
     s = name.lower()
     s = re.sub(r"[^\w\s-]", "", s)
     s = re.sub(r"[\s-]+", "_", s).strip("_")
     return s
+
 
 def _is_t310(dev_id: str, raw: Dict[str, Any]) -> bool:
     if not isinstance(raw, dict):
@@ -39,6 +45,7 @@ def _is_t310(dev_id: str, raw: Dict[str, Any]) -> bool:
         return True
     return False
 
+
 def _is_ke100(dev_id: str, raw: Dict[str, Any]) -> bool:
     model = raw.get("model") or raw.get("device_model")
     if model == MODEL_KE100:
@@ -49,6 +56,7 @@ def _is_ke100(dev_id: str, raw: Dict[str, Any]) -> bool:
     if dev_id.startswith("8035"):
         return True
     return False
+
 
 async def async_setup_entry(hass, entry, async_add_entities):
     data = hass.data[DOMAIN][entry.entry_id]
@@ -77,15 +85,25 @@ async def async_setup_entry(hass, entry, async_add_entities):
     _check_devices()
     entry.async_on_unload(coordinator.async_add_listener(_check_devices))
 
+
 # ---- KE100 TRV (steuerbar) ----
 class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
-    _attr_supported_features: int = (ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF)
+    _attr_supported_features: int = (
+        ClimateEntityFeature.TARGET_TEMPERATURE
+        | ClimateEntityFeature.TURN_ON
+        | ClimateEntityFeature.TURN_OFF
+        | ClimateEntityFeature.PRESET_MODE  # Preset-Unterstützung
+    )
     _attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
-    _attr_precision = PRECISION_TENTHS   # <<<<<< geändert
+    _attr_precision = PRECISION_TENTHS
     _attr_target_temperature_step = 1.0
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    _attr_icon = "mdi:thermostat"
     _attr_min_temp = 5
     _attr_max_temp = 30
+
+    # Preset-Liste: Minimal-Variante Schedule/Manual
+    _attr_preset_modes: list[str] = ["schedule", "manual"]
 
     def __init__(self, coordinator: KasaKe100Coordinator, device_id: str) -> None:
         super().__init__(coordinator)
@@ -132,17 +150,39 @@ class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
             return HVACAction.OFF
         return None
 
+    # ---- PRESET-API (Schedule/Manual) ----
+    @property
+    def preset_modes(self) -> list[str] | None:
+        return self._attr_preset_modes
+
+    @property
+    def preset_mode(self) -> str | None:
+        sch = self._st.get("schedule_enabled")
+        if isinstance(sch, bool):
+            return "schedule" if sch else "manual"
+        mode = (self._st.get("preset_mode") or "").lower()
+        if mode in self._attr_preset_modes:
+            return mode
+        return "manual"
+
+    async def async_set_preset_mode(self, preset_mode: str) -> None:
+        if preset_mode not in self._attr_preset_modes:
+            raise HomeAssistantError(f"Unsupported preset: {preset_mode}")
+        try:
+            # Nutzung des Coordinator-Wrappers (sauber, inkl. Refresh)
+            await self.coordinator.async_set_schedule_enabled(self._id, preset_mode == "schedule")
+        except Exception as err:
+            # Fange Client/Lib-Errors ab und liefere eine klare HA-Fehlermeldung
+            raise HomeAssistantError(f"Failed to set preset to '{preset_mode}': {err}")
+
     async def async_set_temperature(self, **kwargs: Any) -> None:
         temp = kwargs.get(ATTR_TEMPERATURE)
         if temp is None:
             return
-
-        # Nur ganze Zahlen zulassen
         if isinstance(temp, (int, float)) and float(temp).is_integer():
             await self.coordinator.client.async_set_target_temp(self._id, int(temp))
             await self.coordinator.async_request_refresh()
         else:
-            # ignorieren, falls jemand z. B. 21.5 versucht
             return
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
@@ -155,14 +195,18 @@ class Ke100ClimateEntity(CoordinatorEntity, ClimateEntity):
     async def async_turn_off(self) -> None:
         await self.async_set_hvac_mode(HVACMode.OFF)
 
+    @property
+    def entity_picture(self) -> str | None:
+        return ICON_URL
+
 
 # ---- T310 als "Climate-Display" (nur Anzeige) ----
 class T310ClimateDisplayEntity(CoordinatorEntity, ClimateEntity):
-    # Keine Steuerfunktionen; keine auswählbaren Modi
     _attr_supported_features = ClimateEntityFeature(0)
     _attr_hvac_modes: list[HVACMode] = []
     _attr_precision = PRECISION_TENTHS
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    _attr_icon = "mdi:thermostat"
     _attr_min_temp = 0
     _attr_max_temp = 0
 
@@ -188,7 +232,6 @@ class T310ClimateDisplayEntity(CoordinatorEntity, ClimateEntity):
             "name": self.name,
         }
 
-    # ---- humidity bridging ----
     def _humidity_from_same_device(self) -> Optional[float]:
         try:
             er_reg = er.async_get(self.hass)
@@ -231,7 +274,6 @@ class T310ClimateDisplayEntity(CoordinatorEntity, ClimateEntity):
                 pass
         return self._humidity_from_same_device() or self._humidity_from_named_sensor()
 
-    # ---- climate interface (read-only) ----
     @property
     def current_temperature(self) -> float | None:
         return _str_to_float(self._st.get("current_temp"))
@@ -242,12 +284,10 @@ class T310ClimateDisplayEntity(CoordinatorEntity, ClimateEntity):
 
     @property
     def hvac_mode(self) -> HVACMode | None:
-        # Report a stable state to avoid "unknown" while keeping selector hidden
         return HVACMode.HEAT
 
     @property
     def hvac_action(self) -> Optional[HVACAction]:
-        # No action shown
         return None
 
     @property
